@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="OrionGrant" width="150" />
+</p>
+
 # OrionGrant
 
 [![CI/CD](https://github.com/tunahanaliozturk/OrionGrant/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tunahanaliozturk/OrionGrant/actions/workflows/ci-cd.yml)
