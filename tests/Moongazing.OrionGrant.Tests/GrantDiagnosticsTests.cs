@@ -15,6 +15,7 @@ using Xunit;
 /// outcome/kind tags it emits, and that authorization decisions flow through to the meter. A
 /// <see cref="MeterListener"/> captures measurements so the tags can be asserted end to end.
 /// </summary>
+[Collection("MeterListener")]
 public sealed class GrantDiagnosticsTests
 {
     private sealed record Measurement(long Value, string Outcome, string Kind);
