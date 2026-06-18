@@ -88,6 +88,22 @@ public sealed class GrantAuthorizerResourceTests
     }
 
     [Fact]
+    public void Null_elevated_permissions_is_normalized_and_does_not_crash()
+    {
+        using var diag = new GrantDiagnostics();
+        var authorizer = Build(diag);
+        var principal = new GrantPrincipal { Subject = "u1", Permissions = ["accounts:read"] };
+        var resource = ResourceContext.OwnedBy("someone-else");
+        // A caller explicitly nulling the collection must not break the ownership check.
+        var options = new ResourceAuthorizationOptions { ElevatedPermissions = null! };
+
+        var result = authorizer.Authorize(principal, "accounts:read", resource, options);
+
+        // A non-owner with no elevated bypass is simply denied, not an NRE from iterating a null set.
+        Assert.False(result.IsGranted);
+    }
+
+    [Fact]
     public void Owner_without_the_permission_is_denied()
     {
         using var diag = new GrantDiagnostics();

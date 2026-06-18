@@ -36,7 +36,13 @@ public sealed class ResourceAuthorizationOptions
     /// bare <c>*</c> grant bypass ownership with no per-call configuration, keep
     /// <see cref="TreatRootWildcardAsElevated"/> enabled.
     /// </remarks>
-    public IReadOnlyCollection<string> ElevatedPermissions { get; init; } = [];
+    public IReadOnlyCollection<string> ElevatedPermissions
+    {
+        get => elevatedPermissions;
+        init => elevatedPermissions = value ?? [];
+    }
+
+    private readonly IReadOnlyCollection<string> elevatedPermissions = [];
 
     /// <summary>
     /// When true (the default), a principal holding the root <c>*</c> permission bypasses ownership
