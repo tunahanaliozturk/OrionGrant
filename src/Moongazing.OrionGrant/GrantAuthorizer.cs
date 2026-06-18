@@ -60,6 +60,39 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
     }
 
     /// <inheritdoc />
+    public AuthorizationResult Authorize(
+        GrantPrincipal principal,
+        string requiredPermission,
+        ResourceContext resource,
+        ResourceAuthorizationOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentException.ThrowIfNullOrEmpty(requiredPermission);
+        ArgumentNullException.ThrowIfNull(resource);
+
+        var opts = options ?? ResourceAuthorizationOptions.Default;
+        var effective = EffectivePermissions(principal);
+
+        // The base permission is a hard gate: without it, ownership is irrelevant (the IDOR fix).
+        if (!PermissionMatcher.IsGrantedByAny(effective, requiredPermission))
+        {
+            diagnostics.Record(granted: false, "resource");
+            return AuthorizationResult.Denied($"Missing permission '{requiredPermission}'.");
+        }
+
+        // Owner OR elevated: an admin/root or a configured elevated grant bypasses ownership.
+        var granted = ResourceAccess.IsElevated(effective, opts)
+            || ResourceAccess.IsOwner(principal, resource, opts);
+
+        diagnostics.Record(granted, "resource");
+        return granted
+            ? AuthorizationResult.Granted
+            : AuthorizationResult.Denied(
+                $"Principal '{principal.Subject}' holds '{requiredPermission}' but is not the owner of " +
+                $"the requested resource and holds no elevated grant.");
+    }
+
+    /// <inheritdoc />
     public AuthorizationResult AuthorizePolicy(GrantPrincipal principal, string policyName)
     {
         ArgumentNullException.ThrowIfNull(principal);
