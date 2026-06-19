@@ -46,6 +46,9 @@ trivially unit-testable, and there is no external service to stand up.
 - **Named policies.** `RequireAll` needs every listed permission; `RequireAny` needs at least one.
   Endpoints depend on the policy name, so you can change what it requires without touching call
   sites.
+- **Resource / ownership-aware authorization.** Object-level checks where access is granted to the
+  resource's owner OR to a principal holding a configured elevated permission. Holding `accounts:read`
+  is necessary but not sufficient to read an account you do not own, which closes the IDOR gap.
 - **A clear decision type.** Every check returns an `AuthorizationResult` carrying a granted flag
   and, on denial, a human-readable reason suitable for logging and a 403 body.
 - **Telemetry built in.** A `System.Diagnostics.Metrics` meter counts every decision, tagged by
@@ -163,6 +166,59 @@ var touch  = authorizer.AuthorizePolicy(caller, "orders.touch");
 Each listed permission is checked through the same wildcard matcher, so a principal holding
 `orders:*` satisfies a policy that lists `orders:read` and `orders:write`. An unknown policy name is
 denied with a reason rather than throwing.
+
+### Resource and ownership-aware authorization
+
+A permission check answers "may this principal read accounts?". It does not answer "may this
+principal read *this* account?". Granting `accounts:read` to every caller and reading whatever id
+arrives is the classic IDOR (Insecure Direct Object Reference) bug: one user reads another user's
+row by changing a number in the URL.
+
+The resource-aware overload closes that gap. The principal must hold the permission AND either own
+the resource or hold a configured elevated grant. Holding the permission alone is necessary but not
+sufficient:
+
+```csharp
+// account 42 is owned by u1; the owner id is what gets compared to the principal subject.
+var account = new ResourceContext(ownerId: "u1", resourceType: "account", resourceId: "42");
+
+var owner    = new GrantPrincipal { Subject = "u1", Permissions = ["accounts:read"] };
+var stranger = new GrantPrincipal { Subject = "u2", Permissions = ["accounts:read"] };
+
+authorizer.Authorize(owner,    "accounts:read", account).IsGranted;   // true  - holds it and owns it
+authorizer.Authorize(stranger, "accounts:read", account).IsGranted;   // false - holds it but does not own it
+```
+
+`ResourceContext.OwnedBy("u1")` is a shorthand when only the owner identity matters. The optional
+`resourceType` and `resourceId` are not used in the decision; they are carried for logging and
+diagnostics so a denial can be traced to a concrete resource.
+
+The "owner OR elevated" pattern lets privileged callers bypass ownership. Configure it per call with
+`ResourceAuthorizationOptions`:
+
+```csharp
+var options = new ResourceAuthorizationOptions
+{
+    ElevatedPermissions = ["accounts:read:any"],   // any caller granted this bypasses ownership
+};
+
+var support = new GrantPrincipal { Subject = "svc-support", Permissions = ["accounts:read", "accounts:read:any"] };
+authorizer.Authorize(support, "accounts:read", account, options).IsGranted;   // true - elevated bypass
+```
+
+Elevated permissions are matched through the same wildcard matcher as everything else.
+`OwnerComparison` controls how the subject and owner id are compared (`StringComparison.Ordinal` by
+default, matching the rest of the library). `TreatRootWildcardAsElevated` is on by default, so a
+principal holding the root `*` grant bypasses ownership with no per-call configuration:
+
+```csharp
+var admin = new GrantPrincipal { Subject = "svc-admin", Permissions = ["*"] };
+authorizer.Authorize(admin, "accounts:read", account).IsGranted;   // true - root bypasses ownership
+```
+
+The overload is a default interface method on `IGrantAuthorizer`, so existing implementors keep
+compiling. Resource-aware decisions are recorded on the `oriongrant.decisions` counter with
+`kind=resource`.
 
 ## Configuration
 

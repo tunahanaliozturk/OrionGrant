@@ -31,10 +31,11 @@ internal static class Program
         // 1. Pure matcher, no container needed.
         WildcardMatchingDemo.Run();
 
-        // 2-4. Drive the real authorizer resolved above.
+        // 2-5. Drive the real authorizer resolved above.
         RoleExpansionDemo.Run(authorizer);
         PolicyEvaluationDemo.Run(authorizer);
         AuthorizeAllowedDeniedDemo.Run(authorizer);
+        ResourceOwnershipDemo.Run(authorizer);
 
         DemoConsole.Blank();
         DemoConsole.Line("Demo complete.");
