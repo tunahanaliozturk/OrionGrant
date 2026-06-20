@@ -10,43 +10,88 @@ namespace Moongazing.OrionGrant.Permissions;
 public static class PermissionMatcher
 {
     private const char Separator = ':';
-    private const string Wildcard = "*";
+    private const char WildcardChar = '*';
 
     /// <summary>Does a single granted pattern cover the required permission?</summary>
     /// <param name="pattern">The granted permission pattern.</param>
     /// <param name="required">The permission being checked.</param>
+    /// <remarks>
+    /// Walks the colon-separated segments of both strings as spans, comparing each segment with
+    /// ordinal equality and slicing in place. This allocates nothing: it avoids the two
+    /// <c>string.Split(':')</c> arrays the equivalent segment-array implementation would create on
+    /// every check, which matters because this runs once per granted pattern on the authorization
+    /// hot path. The matching semantics are identical to the array-based form.
+    /// </remarks>
     public static bool IsGranted(string pattern, string required)
     {
         ArgumentException.ThrowIfNullOrEmpty(pattern);
         ArgumentException.ThrowIfNullOrEmpty(required);
 
-        var patternSegments = pattern.Split(Separator);
-        var requiredSegments = required.Split(Separator);
+        return IsGranted(pattern.AsSpan(), required.AsSpan());
+    }
 
-        for (var i = 0; i < patternSegments.Length; i++)
+    private static bool IsGranted(ReadOnlySpan<char> pattern, ReadOnlySpan<char> required)
+    {
+        // Two cursors walk the colon-separated segments without allocating. A non-negative cursor
+        // points at the start of the next segment; -1 means that side is fully consumed. Because a
+        // non-empty string always yields at least one (possibly empty) segment, both cursors start
+        // at 0.
+        var patternPos = 0;
+        var requiredPos = 0;
+
+        while (true)
         {
-            var segment = patternSegments[i];
-            var isLast = i == patternSegments.Length - 1;
+            var patternSegment = NextSegment(pattern, ref patternPos);
+            var isLastPatternSegment = patternPos < 0;
+            var isWildcard = patternSegment.Length == 1 && patternSegment[0] == WildcardChar;
 
-            if (segment == Wildcard && isLast)
+            if (isWildcard && isLastPatternSegment)
             {
-                // A trailing wildcard covers one or more remaining required segments.
-                return requiredSegments.Length > i;
+                // A trailing wildcard covers one or more remaining required segments. That holds iff
+                // there is still an unconsumed required segment (mirrors requiredSegments.Length > i
+                // in the array-based form, evaluated at the trailing-wildcard pattern index).
+                return requiredPos >= 0;
             }
 
-            if (i >= requiredSegments.Length)
+            if (requiredPos < 0)
+            {
+                // i >= requiredSegments.Length: no required segment remains to line up with this one.
+                return false;
+            }
+
+            var requiredSegment = NextSegment(required, ref requiredPos);
+
+            if (!isWildcard && !patternSegment.SequenceEqual(requiredSegment))
             {
                 return false;
             }
 
-            if (segment != Wildcard && !string.Equals(segment, requiredSegments[i], StringComparison.Ordinal))
+            if (isLastPatternSegment)
             {
-                return false;
+                // No trailing wildcard consumed the rest, so the lengths must line up exactly: the
+                // required side must also now be fully consumed.
+                return requiredPos < 0;
             }
         }
+    }
 
-        // No trailing wildcard consumed the rest, so the lengths must line up exactly.
-        return patternSegments.Length == requiredSegments.Length;
+    /// <summary>
+    /// Returns the segment of <paramref name="value"/> starting at <paramref name="pos"/> up to the
+    /// next <see cref="Separator"/>, then advances <paramref name="pos"/> to the start of the
+    /// following segment, or sets it to -1 when the returned segment was the last one.
+    /// </summary>
+    private static ReadOnlySpan<char> NextSegment(ReadOnlySpan<char> value, ref int pos)
+    {
+        var remaining = value[pos..];
+        var sep = remaining.IndexOf(Separator);
+        if (sep < 0)
+        {
+            pos = -1;
+            return remaining;
+        }
+
+        pos += sep + 1;
+        return remaining[..sep];
     }
 
     /// <summary>Does any granted pattern in the set cover the required permission?</summary>

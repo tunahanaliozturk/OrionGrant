@@ -6,6 +6,20 @@ All notable changes to OrionGrant are documented in this file. The format is bas
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-20
+
+### Performance
+
+- `PermissionMatcher.IsGranted` no longer splits the pattern and required permission into segment
+  arrays on every check. It walks the colon-separated segments of both strings as
+  `ReadOnlySpan<char>`, slicing in place and comparing each segment with ordinal equality. The
+  matching semantics are identical (every existing test passes unchanged); the difference is purely
+  in allocation and throughput. Because `IsGranted` runs once per granted pattern on every
+  `Authorize` / policy / resource decision, this removes the two array allocations that previously
+  occurred per pattern on the authorization hot path. A representative `IsGrantedByAny` over an
+  eight-entry effective set drops from roughly 2,250 ns and 2,232 B to roughly 335 ns and 32 B (the
+  remaining allocation is the enumerator over the granted set, not the matcher).
+
 ## [0.2.0] - 2026-06-19
 
 ### Added
@@ -65,5 +79,6 @@ Initial release. Permission and policy authorization.
 24 tests across the matcher (specification table), the authorizer (direct, role expansion,
 unknown role, effective set, policy all-of/any-of, unknown policy), and registration.
 
+[0.2.1]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.1
 [0.2.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.0
 [0.1.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.1.0
