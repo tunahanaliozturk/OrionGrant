@@ -86,4 +86,42 @@ public sealed class RoleRegistryTests
     {
         Assert.Throws<ArgumentNullException>(() => new RoleRegistry(null!));
     }
+
+    [Fact]
+    public void Mutating_the_source_collections_after_construction_does_not_change_the_registry()
+    {
+        // The registry must own immutable snapshots of the caller's collections. If it stored them
+        // by reference, a later mutation of the source dictionary or any inner set (e.g. a reused
+        // builder path) could silently change resolved authorization outcomes at runtime.
+        var readerPermissions = new HashSet<string>(["orders:read"], StringComparer.Ordinal);
+        var roles = new Dictionary<string, IReadOnlySet<string>>(StringComparer.Ordinal)
+        {
+            ["reader"] = readerPermissions,
+        };
+        var inclusions = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+        {
+            ["reader"] = new List<string> { "base" },
+        };
+
+        var registry = new RoleRegistry(roles, inclusions);
+
+        // Mutate every caller-owned collection the registry was built from.
+        readerPermissions.Add("orders:write");          // inner permission set
+        roles["reader"] = new HashSet<string>(StringComparer.Ordinal); // outer roles map value
+        roles["admin"] = new HashSet<string>(["*"], StringComparer.Ordinal); // new outer key
+        ((List<string>)inclusions["reader"]).Add("elevated"); // inner inclusion list
+        inclusions["writer"] = new List<string> { "base" };  // new outer key
+
+        // Resolved permissions reflect only the construction-time snapshot.
+        var permissions = registry.PermissionsFor("reader");
+        Assert.Equal(["orders:read"], permissions.OrderBy(p => p, StringComparer.Ordinal).ToArray());
+
+        // Declared inclusions likewise unchanged.
+        Assert.Equal(["base"], registry.IncludedRolesFor("reader"));
+
+        // Keys added to the source after construction did not leak in.
+        Assert.Empty(registry.PermissionsFor("admin"));
+        Assert.Empty(registry.IncludedRolesFor("writer"));
+        Assert.Equal(["reader"], registry.Roles.OrderBy(n => n, StringComparer.Ordinal).ToArray());
+    }
 }

@@ -37,6 +37,9 @@ internal static class Program
         AuthorizeAllowedDeniedDemo.Run(authorizer);
         ResourceOwnershipDemo.Run(authorizer);
 
+        // 6. The 0.3.0 additions, on their own authorizer with a role-inclusion graph.
+        RoleInclusionBatchDemo.Run();
+
         DemoConsole.Blank();
         DemoConsole.Line("Demo complete.");
     }

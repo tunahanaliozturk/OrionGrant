@@ -52,11 +52,8 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
         ArgumentNullException.ThrowIfNull(principal);
         ArgumentException.ThrowIfNullOrEmpty(requiredPermission);
 
-        var granted = PermissionMatcher.IsGrantedByAny(EffectivePermissions(principal), requiredPermission);
-        diagnostics.Record(granted, "permission");
-        return granted
-            ? AuthorizationResult.Granted
-            : AuthorizationResult.Denied($"Missing permission '{requiredPermission}'.");
+        var effective = EffectivePermissions(principal);
+        return EvaluatePermission(effective, requiredPermission);
     }
 
     /// <inheritdoc />
@@ -77,7 +74,9 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
         if (!PermissionMatcher.IsGrantedByAny(effective, requiredPermission))
         {
             diagnostics.Record(granted: false, "resource");
-            return AuthorizationResult.Denied($"Missing permission '{requiredPermission}'.");
+            return AuthorizationResult.Denied(
+                $"Missing permission '{requiredPermission}'.",
+                DenialReason.MissingPermission(requiredPermission));
         }
 
         // Owner OR elevated: an admin/root or a configured elevated grant bypasses ownership.
@@ -89,7 +88,8 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
             ? AuthorizationResult.Granted
             : AuthorizationResult.Denied(
                 $"Principal '{principal.Subject}' holds '{requiredPermission}' but is not the owner of " +
-                $"the requested resource and holds no elevated grant.");
+                $"the requested resource and holds no elevated grant.",
+                DenialReason.ResourceOwnership(requiredPermission, resource));
     }
 
     /// <inheritdoc />
@@ -102,10 +102,92 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
         if (policy is null)
         {
             diagnostics.Record(granted: false, "policy");
-            return AuthorizationResult.Denied($"Unknown policy '{policyName}'.");
+            return AuthorizationResult.Denied(
+                $"Unknown policy '{policyName}'.",
+                DenialReason.PolicyNotFound(policyName));
         }
 
         var effective = EffectivePermissions(principal);
+        return EvaluatePolicy(policy, effective);
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<BatchAuthorizationResult> AuthorizeAll(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> requiredPermissions)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(requiredPermissions);
+
+        // Expand the effective set once and reuse it for every requirement, rather than rebuilding
+        // it per check as N separate Authorize calls would.
+        var effective = EffectivePermissions(principal);
+        var results = new List<BatchAuthorizationResult>(requiredPermissions.Count);
+        foreach (var permission in requiredPermissions)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(permission, nameof(requiredPermissions));
+            results.Add(new BatchAuthorizationResult(permission, EvaluatePermission(effective, permission)));
+        }
+
+        return results;
+    }
+
+    /// <inheritdoc />
+    public IReadOnlyList<BatchAuthorizationResult> AuthorizeAllPolicies(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> policyNames)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(policyNames);
+
+        // The effective set is the same for every policy, so build it once for the whole batch.
+        var effective = EffectivePermissions(principal);
+        var results = new List<BatchAuthorizationResult>(policyNames.Count);
+        foreach (var policyName in policyNames)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(policyName, nameof(policyNames));
+
+            var policy = policies.Find(policyName);
+            AuthorizationResult result;
+            if (policy is null)
+            {
+                diagnostics.Record(granted: false, "policy");
+                result = AuthorizationResult.Denied(
+                    $"Unknown policy '{policyName}'.",
+                    DenialReason.PolicyNotFound(policyName));
+            }
+            else
+            {
+                result = EvaluatePolicy(policy, effective);
+            }
+
+            results.Add(new BatchAuthorizationResult(policyName, result));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Evaluate one permission against an already-expanded effective set, recording the decision.
+    /// Shared by the single-permission and batch paths so both apply identical semantics.
+    /// </summary>
+    private AuthorizationResult EvaluatePermission(IReadOnlySet<string> effective, string requiredPermission)
+    {
+        var granted = PermissionMatcher.IsGrantedByAny(effective, requiredPermission);
+        diagnostics.Record(granted, "permission");
+        return granted
+            ? AuthorizationResult.Granted
+            : AuthorizationResult.Denied(
+                $"Missing permission '{requiredPermission}'.",
+                DenialReason.MissingPermission(requiredPermission));
+    }
+
+    /// <summary>
+    /// Evaluate one policy against an already-expanded effective set, recording the decision. Shared
+    /// by the single-policy and batch paths.
+    /// </summary>
+    private AuthorizationResult EvaluatePolicy(AccessPolicy policy, IReadOnlySet<string> effective)
+    {
         var result = Evaluate(policy, effective);
         diagnostics.Record(result.IsGranted, "policy");
         return result;
@@ -124,7 +206,8 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
             }
 
             return AuthorizationResult.Denied(
-                $"Policy '{policy.Name}' requires any of: {string.Join(", ", policy.Permissions)}.");
+                $"Policy '{policy.Name}' requires any of: {string.Join(", ", policy.Permissions)}.",
+                DenialReason.PolicyRequireAnyUnmet(policy.Name));
         }
 
         foreach (var permission in policy.Permissions)
@@ -132,7 +215,8 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
             if (!PermissionMatcher.IsGrantedByAny(effective, permission))
             {
                 return AuthorizationResult.Denied(
-                    $"Policy '{policy.Name}' requires '{permission}', which is not granted.");
+                    $"Policy '{policy.Name}' requires '{permission}', which is not granted.",
+                    DenialReason.PolicyRequireAllUnmet(policy.Name, permission));
             }
         }
 
