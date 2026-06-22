@@ -2,9 +2,10 @@
 
 Where OrionGrant is, what has shipped, and what is likely next.
 
-OrionGrant is at `0.2.1`: a dependency-light permission and policy authorization library for .NET, with
-hierarchical wildcard permissions, roles, named all-of / any-of policies, and resource / ownership-aware
-(object-level) checks. The core model is stable in shape. The forward plan below lists what is likely next,
+OrionGrant is at `0.3.0`: a dependency-light permission and policy authorization library for .NET, with
+hierarchical wildcard permissions, roles (including role-to-role composition), named all-of / any-of
+policies, resource / ownership-aware (object-level) checks, structured denial reasons, and batch checks.
+The core model is stable in shape. The forward plan below lists what is likely next,
 grouped by milestone. Milestones are direction, not contracts: items move forward when real workloads ask
 for them. If something here matters to you, open an issue and say so, that is what moves an item up the list.
 
@@ -39,6 +40,17 @@ What was on this list and has since landed. See [CHANGELOG.md](../CHANGELOG.md) 
   colon-separated segments of both strings as `ReadOnlySpan<char>` and compares them ordinally in place,
   rather than splitting each into segment arrays per check. Matching semantics are unchanged; the two
   per-pattern array allocations on the authorization hot path are gone.
+- **Role-to-role inclusion** (`0.3.0`). `OrionGrantBuilder.IncludeRole` lets a role compose other
+  roles; permissions resolve transitively and are flattened into each role's effective set once at
+  build time, so the hot path stays a single set lookup. Cycles are rejected at registration with a
+  `RoleInclusionCycleException` rather than looping during a request.
+- **Structured denial reasons** (`0.3.0`). A denied `AuthorizationResult` now carries a
+  `DenialReason` (a `DenialKind` plus which permission, policy, mode, or resource was at fault)
+  alongside the unchanged human-readable string, so callers can branch on the cause instead of
+  parsing prose.
+- **Batch checks** (`0.3.0`). `AuthorizeAll` and `AuthorizeAllPolicies` evaluate several
+  requirements for one principal in a single call, returning a result per requirement and expanding
+  the effective set once for the whole batch instead of once per check.
 
 ---
 
@@ -46,19 +58,7 @@ What was on this list and has since landed. See [CHANGELOG.md](../CHANGELOG.md) 
 
 Candidates grouped by the milestone they would most likely land in. Order within a milestone is not fixed.
 
-### Next minor (`0.3.0`, targeting Q3 2026)
-
-- **Role-to-role inclusion.** Let a role include another role so common bundles compose, with cycle
-  detection at registration time. Effective-set expansion already unions role permissions; this extends it
-  to transitive inclusion.
-- **Structured denial reasons.** `AuthorizationResult` carries only a granted flag and a human-readable
-  string today. Add structured denial data (which permission, which policy, which mode, owner vs. elevated)
-  alongside the string, so callers can branch on the cause instead of parsing prose.
-- **Batch checks.** Evaluate several required permissions or policies for one principal in a single call,
-  returning a result per requirement, so a call site expanding its effective set repeatedly does not pay
-  for that expansion once per check.
-
-### Following minor (`0.4.0`, targeting Q4 2026)
+### Next minor (`0.4.0`, targeting Q4 2026)
 
 - **Effective-set caching per principal.** `EffectivePermissions` rebuilds a set on every call. Add an
   optional cache keyed on a principal's roles and direct permissions, for call sites that authorize the

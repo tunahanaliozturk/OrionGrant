@@ -6,6 +6,50 @@ All notable changes to OrionGrant are documented in this file. The format is bas
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-06-22
+
+### Added
+
+Three composable additions to the authorization model. The existing permission, policy, and
+resource APIs keep their behavior; everything here is additive and non-breaking.
+
+- **Role-to-role inclusion.** `OrionGrantBuilder.IncludeRole(role, params includedRoles)` lets a
+  role compose other roles so common bundles stack. Inclusion is transitive (if `editor` includes
+  `reader` and `admin` includes `editor`, then `admin` grants `reader`'s permissions) and is
+  resolved into each role's effective permission set once at `BuildRoles()` time, so the
+  authorization hot path stays a single set lookup with no graph walk. Cycles (a role that includes
+  itself directly or transitively) are rejected at registration with the new
+  `RoleInclusionCycleException`, whose `Cycle` lists the roles forming the loop, so a
+  misconfiguration fails fast at startup instead of looping during a request. `RoleRegistry` gains
+  an `IncludedRolesFor(role)` introspection member and a second constructor that accepts the
+  declared inclusion edges; the original `RoleRegistry(IReadOnlyDictionary<...>)` constructor is
+  unchanged and still does no flattening.
+- **Structured denial reasons.** `AuthorizationResult` gains a `DenialReason? Denial` alongside the
+  existing `FailureReason` string, so callers can branch on the cause of a denial instead of parsing
+  prose. `DenialReason` carries a `DenialKind` (`MissingPermission`, `PolicyNotFound`,
+  `PolicyRequirementUnmet`, `ResourceOwnership`) plus the relevant identifiers: the missing
+  permission, the policy name and `PolicyMode`, and the resource type/id for an ownership denial.
+  The human-readable string is preserved unchanged on every denial path. A new
+  `AuthorizationResult.Denied(string, DenialReason)` overload supplies the structured cause; the
+  original `Denied(string)` overload stays and produces a null `Denial`.
+- **Batch checks.** `IGrantAuthorizer.AuthorizeAll(principal, permissions)` and
+  `AuthorizeAllPolicies(principal, policyNames)` evaluate several requirements for one principal in a
+  single call, returning one `BatchAuthorizationResult` per requirement in input order. The concrete
+  `GrantAuthorizer` expands the principal's effective set once for the whole batch rather than once
+  per requirement, so a call site checking many requirements does not pay for that expansion
+  repeatedly. Both are default interface methods (delegating per-item to the single-check methods),
+  so existing `IGrantAuthorizer` implementors keep compiling. Each item records one decision on the
+  `oriongrant.decisions` counter, so a batch of N matches N single calls.
+
+### Tests
+
+49 new tests per target framework (net8.0, net9.0, net10.0) covering transitive role resolution and
+diamond inclusion, cycle detection (self, two-role, longer, and self-on-acyclic) terminating with a
+clear `RoleInclusionCycleException` rather than looping, a structured denial cause for each denial
+kind across the permission / policy / resource paths (including through the interface default
+method), and batch checks returning correct per-item results that match the equivalent single-check
+semantics, in input order, with one recorded decision per item.
+
 ## [0.2.1] - 2026-06-20
 
 ### Performance
@@ -79,6 +123,7 @@ Initial release. Permission and policy authorization.
 24 tests across the matcher (specification table), the authorizer (direct, role expansion,
 unknown role, effective set, policy all-of/any-of, unknown policy), and registration.
 
+[0.3.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.3.0
 [0.2.1]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.1
 [0.2.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.0
 [0.1.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.1.0

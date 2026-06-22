@@ -61,13 +61,75 @@ public interface IGrantAuthorizer
 
         return AuthorizationResult.Denied(
             $"Principal '{principal.Subject}' holds '{requiredPermission}' but is not the owner of " +
-            $"the requested resource and holds no elevated grant.");
+            $"the requested resource and holds no elevated grant.",
+            DenialReason.ResourceOwnership(requiredPermission, resource));
     }
 
     /// <summary>Authorize a principal against a named policy.</summary>
     /// <param name="principal">The subject of the decision.</param>
     /// <param name="policyName">The policy to evaluate.</param>
     AuthorizationResult AuthorizePolicy(GrantPrincipal principal, string policyName);
+
+    /// <summary>
+    /// Authorize a principal for several required permissions in one call, returning a result per
+    /// requirement in the order supplied. More efficient than calling
+    /// <see cref="Authorize(GrantPrincipal, string)"/> in a loop: the implementation expands the
+    /// principal's effective set once for the whole batch instead of once per permission.
+    /// </summary>
+    /// <param name="principal">The subject of the decision.</param>
+    /// <param name="requiredPermissions">The permissions to check.</param>
+    /// <returns>One <see cref="BatchAuthorizationResult"/> per requirement, in input order.</returns>
+    /// <remarks>
+    /// Implemented as a default interface method so existing implementors keep compiling; the
+    /// default delegates to <see cref="Authorize(GrantPrincipal, string)"/> per item. The concrete
+    /// <see cref="GrantAuthorizer"/> overrides it to share a single effective-set expansion.
+    /// </remarks>
+    IReadOnlyList<BatchAuthorizationResult> AuthorizeAll(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> requiredPermissions)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(requiredPermissions);
+
+        var results = new List<BatchAuthorizationResult>(requiredPermissions.Count);
+        foreach (var permission in requiredPermissions)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(permission, nameof(requiredPermissions));
+            results.Add(new BatchAuthorizationResult(permission, Authorize(principal, permission)));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Authorize a principal against several named policies in one call, returning a result per
+    /// policy in the order supplied. More efficient than calling
+    /// <see cref="AuthorizePolicy(GrantPrincipal, string)"/> in a loop for the same reason as
+    /// <see cref="AuthorizeAll(GrantPrincipal, IReadOnlyCollection{string})"/>.
+    /// </summary>
+    /// <param name="principal">The subject of the decision.</param>
+    /// <param name="policyNames">The policy names to evaluate.</param>
+    /// <returns>One <see cref="BatchAuthorizationResult"/> per policy, in input order.</returns>
+    /// <remarks>
+    /// Implemented as a default interface method so existing implementors keep compiling; the
+    /// default delegates to <see cref="AuthorizePolicy(GrantPrincipal, string)"/> per item.
+    /// </remarks>
+    IReadOnlyList<BatchAuthorizationResult> AuthorizeAllPolicies(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> policyNames)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(policyNames);
+
+        var results = new List<BatchAuthorizationResult>(policyNames.Count);
+        foreach (var policyName in policyNames)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(policyName, nameof(policyNames));
+            results.Add(new BatchAuthorizationResult(policyName, AuthorizePolicy(principal, policyName)));
+        }
+
+        return results;
+    }
 
     /// <summary>
     /// The effective permission set for a principal: its direct permissions unioned with the

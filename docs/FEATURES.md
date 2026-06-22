@@ -115,6 +115,31 @@ public sealed class RoleRegistry
 unknown role on a principal simply contributes nothing rather than failing the decision. Role names
 are compared with `StringComparer.Ordinal`.
 
+### Role-to-role inclusion
+
+A role can include other roles, declared on the builder with
+`IncludeRole(string role, params string[] includedRoles)`. Inclusion is transitive: if `editor`
+includes `reader` and `admin` includes `editor`, then `admin` grants everything `reader` does. It is
+resolved into each role's permission set once at `BuildRoles()` time, so `PermissionsFor` already
+returns the transitive permissions and the authorization hot path stays a single set lookup with no
+graph walk. The declared edges (not the transitive closure) are available for introspection:
+
+```csharp
+public sealed class RoleRegistry
+{
+    public IReadOnlyList<string> IncludedRolesFor(string role);   // declared edges, empty if none
+}
+```
+
+An included role that is never defined with `AddRole` contributes nothing rather than failing, in
+keeping with the unknown-role rule. Inclusion edges that form a cycle (a role including itself
+directly or transitively) are rejected when the registry is built, throwing
+`RoleInclusionCycleException` whose `Cycle` property lists the roles forming the loop. This is a
+registration-time failure, so a misconfiguration surfaces at startup rather than looping during a
+request. The original `RoleRegistry(IReadOnlyDictionary<string, IReadOnlySet<string>>)` constructor
+is unchanged and performs no flattening; a second constructor additionally accepts the declared
+inclusion edges.
+
 ---
 
 ## 5. Policies: RequireAll and RequireAny
@@ -154,7 +179,18 @@ change which permissions that requires without editing the endpoint.
 public interface IGrantAuthorizer
 {
     AuthorizationResult Authorize(GrantPrincipal principal, string requiredPermission);
+    AuthorizationResult Authorize(
+        GrantPrincipal principal,
+        string requiredPermission,
+        ResourceContext resource,
+        ResourceAuthorizationOptions? options = null);   // default interface method
     AuthorizationResult AuthorizePolicy(GrantPrincipal principal, string policyName);
+    IReadOnlyList<BatchAuthorizationResult> AuthorizeAll(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> requiredPermissions);   // default interface method
+    IReadOnlyList<BatchAuthorizationResult> AuthorizeAllPolicies(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> policyNames);   // default interface method
     IReadOnlySet<string> EffectivePermissions(GrantPrincipal principal);
 }
 ```
@@ -172,6 +208,13 @@ The default `GrantAuthorizer`:
   permission, naming it in the reason. Each listed permission is checked through the same wildcard
   matcher.
 
+- `AuthorizeAll` and `AuthorizeAllPolicies` evaluate several permissions or policies for one
+  principal in a single call, returning one `BatchAuthorizationResult` per requirement in input
+  order. `GrantAuthorizer` expands the effective set once for the whole batch rather than once per
+  requirement, and records one decision per item, so a batch of N is equivalent to N single calls in
+  outcome and in metrics while paying for the expansion once. Both are default interface methods
+  (delegating per-item to the single-check methods), so existing implementors keep compiling.
+
 All methods validate their arguments (`ArgumentNullException` for a null principal,
 `ArgumentException` for a null or empty permission or policy name).
 
@@ -186,14 +229,59 @@ public sealed class AuthorizationResult
 {
     public bool IsGranted { get; }
     public string? FailureReason { get; }       // null when granted
+    public DenialReason? Denial { get; }        // structured cause, null when granted
     public static AuthorizationResult Granted { get; }
     public static AuthorizationResult Denied(string reason);
+    public static AuthorizationResult Denied(string reason, DenialReason denial);
 }
 ```
 
 `Granted` is a shared singleton. `Denied` carries a human-readable reason intended for logging and
 for a 403 response body; the reason names the missing permission or policy, so the caller does not
 have to reconstruct why the check failed.
+
+A denial also carries a structured `DenialReason` so a caller can branch on the cause without parsing
+the string:
+
+```csharp
+public enum DenialKind
+{
+    MissingPermission,        // a required permission was not granted
+    PolicyNotFound,           // no policy registered under that name
+    PolicyRequirementUnmet,   // a found policy's RequireAll / RequireAny rule was not satisfied
+    ResourceOwnership,        // base permission held, but not owner and not elevated
+}
+
+public sealed class DenialReason
+{
+    public DenialKind Kind { get; }
+    public string? Permission { get; }    // the permission at fault, when one applies
+    public string? PolicyName { get; }    // for PolicyNotFound / PolicyRequirementUnmet
+    public PolicyMode? PolicyMode { get; }// for PolicyRequirementUnmet
+    public string? ResourceType { get; }  // for ResourceOwnership, echoed from the ResourceContext
+    public string? ResourceId { get; }    // for ResourceOwnership, echoed from the ResourceContext
+}
+```
+
+Which properties are populated depends on `Kind` (for example a `RequireAll` policy denial sets
+`PolicyName`, `PolicyMode`, and the first missing `Permission`; a `RequireAny` denial sets
+`PolicyName` and `PolicyMode` but no single `Permission`). The structured cause is additive: the
+authorizer always supplies one, and the back-compatible `Denied(string)` overload produces a result
+whose `Denial` is null.
+
+### Batch results
+
+```csharp
+public sealed class BatchAuthorizationResult
+{
+    public string Requirement { get; }            // the permission or policy name checked
+    public AuthorizationResult Result { get; }
+    public bool IsGranted { get; }                // shortcut for Result.IsGranted
+}
+```
+
+`AuthorizeAll` and `AuthorizeAllPolicies` return a list of these, positionally aligned with the input
+and echoing each requirement so a caller can correlate results by index or by name.
 
 ---
 
@@ -223,14 +311,18 @@ The builder is fluent:
 public sealed class OrionGrantBuilder
 {
     public OrionGrantBuilder AddRole(string role, params string[] permissions);
+    public OrionGrantBuilder IncludeRole(string role, params string[] includedRoles);
     public OrionGrantBuilder AddPolicy(string name, PolicyMode mode, params string[] permissions);
 }
 ```
 
 `AddRole` is additive: calling it again for the same role name adds to that role's permission set.
-Empty permission strings are ignored. `AddPolicy` registers a named policy under its name (the last
-definition for a given name wins). The builder is evaluated once at registration to produce the
-immutable registries, so there is no per-request configuration cost.
+Empty permission strings are ignored. `IncludeRole` declares that a role composes other roles; it is
+additive too, does not require the included role to be defined, and order-independent (it may precede
+or follow the `AddRole` calls it references). `AddPolicy` registers a named policy under its name (the
+last definition for a given name wins). The builder is evaluated once at registration to produce the
+immutable registries, resolving role inclusion (and rejecting cycles) at that point, so there is no
+per-request configuration cost.
 
 ---
 
@@ -240,10 +332,11 @@ immutable registries, so there is no per-request configuration cost.
 as `GrantDiagnostics.MeterName`). It publishes a single counter:
 
 - `oriongrant.decisions`, unit `{decision}`, tagged `outcome` (`granted` / `denied`) and `kind`
-  (`permission` / `policy`).
+  (`permission` / `policy` / `resource`).
 
 The authorizer records one decision per `Authorize` and `AuthorizePolicy` call, including denials
-for unknown policies. Subscribe from OpenTelemetry with `AddMeter(GrantDiagnostics.MeterName)`.
+for unknown policies, and one decision per item in an `AuthorizeAll` / `AuthorizeAllPolicies` batch.
+Subscribe from OpenTelemetry with `AddMeter(GrantDiagnostics.MeterName)`.
 `GrantDiagnostics` is `IDisposable` and disposes the meter; the DI container handles that for the
 singleton it registers.
 

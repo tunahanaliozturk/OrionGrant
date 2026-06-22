@@ -41,11 +41,18 @@ trivially unit-testable, and there is no external service to stand up.
 
 - **Hierarchical permissions.** Colon-scoped strings (`orders:eu:write`) with wildcard matching:
   `*` matches one segment in the middle, or one-or-more segments when it is the last segment.
-- **Roles.** A role bundles permissions. A principal's effective set is its direct permissions
-  unioned with the permissions of every role it holds. Unknown roles contribute nothing.
+- **Roles, with role-to-role inclusion.** A role bundles permissions, and a role can include other
+  roles so common bundles compose. A principal's effective set is its direct permissions unioned
+  with the permissions of every role it holds (resolved transitively through inclusions). Unknown
+  roles contribute nothing; inclusion cycles are rejected at registration.
 - **Named policies.** `RequireAll` needs every listed permission; `RequireAny` needs at least one.
   Endpoints depend on the policy name, so you can change what it requires without touching call
   sites.
+- **Structured denial reasons.** A denial carries a `DenialReason` (which permission, policy, mode,
+  or resource was at fault) alongside the human-readable string, so callers branch on the cause
+  rather than parsing prose.
+- **Batch checks.** Evaluate several permissions or policies for one principal in one call,
+  expanding the effective set once for the whole batch.
 - **Resource / ownership-aware authorization.** Object-level checks where access is granted to the
   resource's owner OR to a principal holding a configured elevated permission. Holding `accounts:read`
   is necessary but not sufficient to read an account you do not own, which closes the IDOR gap.
@@ -146,6 +153,23 @@ You can inspect the effective set for a principal directly:
 IReadOnlySet<string> effective = authorizer.EffectivePermissions(caller);
 ```
 
+A role can also **include** other roles, so common bundles compose instead of being repeated.
+Inclusion is transitive and resolved once at registration; the effective set a principal gets from a
+role already contains every permission reachable through its inclusions:
+
+```csharp
+builder.Services.AddOrionGrant(grant => grant
+    .AddRole("reader", "orders:read")
+    .AddRole("editor", "orders:write")
+    .AddRole("admin",  "orders:delete")
+    .IncludeRole("editor", "reader")    // editor now also grants orders:read
+    .IncludeRole("admin",  "editor"));  // admin grants orders:delete, orders:write, orders:read
+```
+
+Inclusion edges that form a cycle (a role that includes itself directly or transitively) are
+rejected when the registry is built, with a `RoleInclusionCycleException` naming the cycle, so a
+misconfiguration fails fast at startup rather than looping during a request.
+
 ### Policies: RequireAll and RequireAny
 
 A **policy** is a named requirement evaluated against the principal's effective permissions:
@@ -220,6 +244,63 @@ The overload is a default interface method on `IGrantAuthorizer`, so existing im
 compiling. Resource-aware decisions are recorded on the `oriongrant.decisions` counter with
 `kind=resource`.
 
+### Structured denial reasons
+
+Every denial still carries a human-readable `FailureReason` for logging and a 403 body. A denial
+also carries a structured `DenialReason` so a caller can branch on the cause instead of parsing the
+string. `DenialReason.Kind` is one of `MissingPermission`, `PolicyNotFound`,
+`PolicyRequirementUnmet`, or `ResourceOwnership`, and the relevant identifiers are populated
+alongside it:
+
+```csharp
+var decision = authorizer.AuthorizePolicy(caller, "orders.manage");
+if (!decision.IsGranted && decision.Denial is { } denial)
+{
+    switch (denial.Kind)
+    {
+        case DenialKind.PolicyNotFound:
+            // denial.PolicyName is the unknown policy.
+            break;
+        case DenialKind.PolicyRequirementUnmet:
+            // denial.PolicyName, denial.PolicyMode, and (for RequireAll) denial.Permission.
+            break;
+        case DenialKind.MissingPermission:
+            // denial.Permission is the permission that was not granted.
+            break;
+        case DenialKind.ResourceOwnership:
+            // denial.Permission was held; denial.ResourceType / denial.ResourceId echo the resource.
+            break;
+    }
+}
+```
+
+The structured cause is additive: `FailureReason` is unchanged, and the back-compatible
+`AuthorizationResult.Denied(string)` overload still produces a result with a null `Denial`.
+
+### Batch checks
+
+Check several permissions or policies for one principal in a single call. The authorizer expands the
+principal's effective set once for the whole batch instead of once per requirement, and returns one
+`BatchAuthorizationResult` per requirement in input order:
+
+```csharp
+IReadOnlyList<BatchAuthorizationResult> results = authorizer.AuthorizeAll(
+    caller, ["orders:read", "orders:write", "billing:read"]);
+
+foreach (var result in results)
+{
+    Console.WriteLine($"{result.Requirement}: {(result.IsGranted ? "granted" : "denied")}");
+}
+
+// Policies work the same way.
+var policyResults = authorizer.AuthorizeAllPolicies(caller, ["orders.manage", "orders.touch"]);
+```
+
+Each item produces exactly the result the equivalent single call would, including its structured
+denial, and records one decision on the meter, so a batch of N is equivalent to N single calls but
+pays for the effective-set expansion only once. `AuthorizeAll` and `AuthorizeAllPolicies` are default
+interface methods, so existing `IGrantAuthorizer` implementors keep compiling.
+
 ## Configuration
 
 Everything is wired through `AddOrionGrant`. The `configure` callback is optional; calling
@@ -275,7 +356,7 @@ you care about.
 
 ## Versioning
 
-OrionGrant follows [Semantic Versioning](https://semver.org/). The current line is `0.1.0`
+OrionGrant follows [Semantic Versioning](https://semver.org/). The current line is `0.3.0`
 (pre-1.0): the public API may still change between minor versions while the design settles. The
 library multi-targets `net8.0`, `net9.0`, and `net10.0`, builds with `TreatWarningsAsErrors`,
 nullable reference types enabled, and `latest-recommended` analyzers. See [CHANGELOG.md](CHANGELOG.md)
