@@ -1,5 +1,7 @@
 namespace Moongazing.OrionGrant.Permissions;
 
+using System.Collections.Frozen;
+
 /// <summary>
 /// An immutable map from role name to the permissions that role grants. Built once at startup from
 /// the registration builder and resolved during authorization to expand a principal's roles.
@@ -14,8 +16,8 @@ public sealed class RoleRegistry
 {
     private static readonly IReadOnlyList<string> NoIncludedRoles = [];
 
-    private readonly IReadOnlyDictionary<string, IReadOnlySet<string>> roles;
-    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>> inclusions;
+    private readonly FrozenDictionary<string, IReadOnlySet<string>> roles;
+    private readonly FrozenDictionary<string, IReadOnlyList<string>> inclusions;
 
     /// <summary>Create a registry from role definitions.</summary>
     /// <param name="roles">The role-to-permissions map.</param>
@@ -39,8 +41,27 @@ public sealed class RoleRegistry
     {
         ArgumentNullException.ThrowIfNull(roles);
         ArgumentNullException.ThrowIfNull(inclusions);
-        this.roles = roles;
-        this.inclusions = inclusions;
+
+        // Defensively snapshot the caller-owned collections into owned, immutable structures. Both
+        // the outer maps and each inner set are copied, so the values are deep-copied too: once the
+        // registry is built, mutating the caller's dictionaries or sets cannot alter authorization
+        // outcomes. Frozen collections also keep the resolution path a fast, read-optimized lookup.
+        var ownedRoles = new Dictionary<string, IReadOnlySet<string>>(roles.Count, StringComparer.Ordinal);
+        foreach (var (role, permissions) in roles)
+        {
+            ArgumentNullException.ThrowIfNull(permissions);
+            ownedRoles[role] = permissions.ToFrozenSet(StringComparer.Ordinal);
+        }
+
+        var ownedInclusions = new Dictionary<string, IReadOnlyList<string>>(inclusions.Count, StringComparer.Ordinal);
+        foreach (var (role, included) in inclusions)
+        {
+            ArgumentNullException.ThrowIfNull(included);
+            ownedInclusions[role] = included.ToArray();
+        }
+
+        this.roles = ownedRoles.ToFrozenDictionary(StringComparer.Ordinal);
+        this.inclusions = ownedInclusions.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     /// <summary>An empty registry (no roles defined).</summary>
