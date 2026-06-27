@@ -32,7 +32,8 @@ public sealed class DenialReason
         string? policyName = null,
         PolicyMode? policyMode = null,
         string? resourceType = null,
-        string? resourceId = null)
+        string? resourceId = null,
+        string? denyPattern = null)
     {
         Kind = kind;
         Permission = permission;
@@ -40,6 +41,7 @@ public sealed class DenialReason
         PolicyMode = policyMode;
         ResourceType = resourceType;
         ResourceId = resourceId;
+        DenyPattern = denyPattern;
     }
 
     /// <summary>The category of the denial.</summary>
@@ -75,6 +77,13 @@ public sealed class DenialReason
     /// denial, when the caller supplied one on the <see cref="ResourceContext"/>. Null otherwise.
     /// </summary>
     public string? ResourceId { get; }
+
+    /// <summary>
+    /// The explicit deny pattern that blocked the request, for a <see cref="DenialKind.ExplicitDeny"/>
+    /// denial. This is the principal's deny entry (for example <c>orders:*</c>) that covered the
+    /// required permission and overrode the allow. Null for every other denial kind.
+    /// </summary>
+    public string? DenyPattern { get; }
 
     /// <summary>A denial because a required permission was not granted.</summary>
     /// <param name="permission">The permission that was missing.</param>
@@ -138,5 +147,32 @@ public sealed class DenialReason
             permission: permission,
             resourceType: resource.ResourceType,
             resourceId: resource.ResourceId);
+    }
+
+    /// <summary>
+    /// A denial because an explicit deny on the principal covered the required permission and
+    /// overrode the allow (deny-overrides precedence).
+    /// </summary>
+    /// <param name="permission">The required permission that was both allowed and denied.</param>
+    /// <param name="denyPattern">The deny entry on the principal that covered it.</param>
+    public static DenialReason ExplicitDeny(string permission, string denyPattern)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(permission);
+        ArgumentException.ThrowIfNullOrEmpty(denyPattern);
+        return new DenialReason(
+            DenialKind.ExplicitDeny,
+            permission: permission,
+            denyPattern: denyPattern);
+    }
+
+    /// <summary>
+    /// A denial because a policy's permission requirement was met but its attribute-based (ABAC)
+    /// condition evaluated to false.
+    /// </summary>
+    /// <param name="policyName">The policy whose condition was not satisfied.</param>
+    public static DenialReason ConditionUnmet(string policyName)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(policyName);
+        return new DenialReason(DenialKind.ConditionUnmet, policyName: policyName);
     }
 }
