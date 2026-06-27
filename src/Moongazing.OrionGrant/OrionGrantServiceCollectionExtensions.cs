@@ -27,13 +27,24 @@ public static class OrionGrantServiceCollectionExtensions
         var builder = new OrionGrantBuilder();
         configure?.Invoke(builder);
 
+        var cache = builder.BuildEffectiveGrantCache();
+
         services.TryAddSingleton(builder.BuildRoles());
         services.TryAddSingleton(builder.BuildPolicies());
         services.TryAddSingleton<GrantDiagnostics>();
+
+        // Register the cache only when one was requested, so the default container has no extra
+        // singleton and the authorizer is constructed with a null cache (the pure 0.3.0 path).
+        if (cache is not null)
+        {
+            services.TryAddSingleton(cache);
+        }
+
         services.TryAddSingleton<IGrantAuthorizer>(sp => new GrantAuthorizer(
             sp.GetRequiredService<RoleRegistry>(),
             sp.GetRequiredService<PolicyRegistry>(),
-            sp.GetRequiredService<GrantDiagnostics>()));
+            sp.GetRequiredService<GrantDiagnostics>(),
+            sp.GetService<IEffectiveGrantCache>()));
 
         return services;
     }

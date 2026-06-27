@@ -29,20 +29,29 @@ internal static class ResourceAccess
     }
 
     /// <summary>
-    /// Does the principal's effective permission set carry an elevated grant that bypasses
-    /// ownership? True when a root <c>*</c> is held and treated as elevated, or when any configured
-    /// elevated permission is granted by the effective set.
+    /// Does the principal's effective grant set carry an elevated grant that bypasses ownership?
+    /// True when a root <c>*</c> is held and treated as elevated, or when any configured elevated
+    /// permission is granted by the allow set. The deny-overrides rule applies here too: an elevated
+    /// grant that is itself covered by an explicit deny does not elevate, so a matching deny strips
+    /// the bypass and ownership governs again. This keeps deny precedence uniform across the elevated
+    /// path and the ordinary permission path.
     /// </summary>
-    internal static bool IsElevated(IReadOnlySet<string> effective, ResourceAuthorizationOptions options)
+    /// <param name="grants">The principal's resolved allow and deny set.</param>
+    /// <param name="options">The resource authorization options.</param>
+    internal static bool IsElevated(EffectiveGrantSet grants, ResourceAuthorizationOptions options)
     {
-        if (options.TreatRootWildcardAsElevated && effective.Contains(RootWildcard))
+        if (options.TreatRootWildcardAsElevated
+            && grants.Allows.Contains(RootWildcard)
+            && grants.MatchingDeny(RootWildcard) is null)
         {
             return true;
         }
 
         foreach (var elevated in options.ElevatedPermissions)
         {
-            if (!string.IsNullOrEmpty(elevated) && PermissionMatcher.IsGrantedByAny(effective, elevated))
+            if (!string.IsNullOrEmpty(elevated)
+                && PermissionMatcher.IsGrantedByAny(grants.Allows, elevated)
+                && grants.MatchingDeny(elevated) is null)
             {
                 return true;
             }

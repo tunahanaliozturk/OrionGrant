@@ -1,8 +1,13 @@
 namespace Moongazing.OrionGrant;
 
+using Moongazing.OrionGrant.Permissions;
+using Moongazing.OrionGrant.Policies;
+
 /// <summary>
 /// Evaluates whether a principal is authorized, either for a single permission or for a named
-/// policy. Roles are expanded into permissions and unioned with the principal's direct grants.
+/// policy. Roles are expanded into permissions and unioned with the principal's direct grants;
+/// explicit denies on the principal override matching allows (deny-overrides), and a policy may
+/// carry an attribute-based (ABAC) condition that is AND-composed with its permission requirement.
 /// </summary>
 public interface IGrantAuthorizer
 {
@@ -48,7 +53,11 @@ public interface IGrantAuthorizer
             return permissionResult;
         }
 
-        var effective = EffectivePermissions(principal);
+        // A deny on the required permission is already honored by the Authorize call above. The
+        // interface contract exposes only the allow set (EffectivePermissions is allow-only), so the
+        // default implementation evaluates elevation against an allow-only grant set. The concrete
+        // GrantAuthorizer overrides this method to apply deny-overrides to the elevated grant itself.
+        var effective = new EffectiveGrantSet(EffectivePermissions(principal));
         if (ResourceAccess.IsElevated(effective, opts))
         {
             return AuthorizationResult.Granted;
@@ -69,6 +78,34 @@ public interface IGrantAuthorizer
     /// <param name="principal">The subject of the decision.</param>
     /// <param name="policyName">The policy to evaluate.</param>
     AuthorizationResult AuthorizePolicy(GrantPrincipal principal, string policyName);
+
+    /// <summary>
+    /// Authorize a principal against a named policy, supplying attributes for the policy's optional
+    /// attribute-based (ABAC) condition. The permission requirement is evaluated exactly as in
+    /// <see cref="AuthorizePolicy(GrantPrincipal, string)"/>; if the policy carries a condition it is
+    /// an additional AND gate evaluated against <paramref name="attributes"/>. A policy with no
+    /// condition ignores the attributes and behaves identically to the two-argument overload.
+    /// </summary>
+    /// <param name="principal">The subject of the decision.</param>
+    /// <param name="policyName">The policy to evaluate.</param>
+    /// <param name="attributes">
+    /// The principal, resource, and environment attributes the condition reads. Null synthesizes a
+    /// context from the principal alone (no resource, no environment), which still satisfies
+    /// conditions that read only the principal.
+    /// </param>
+    /// <remarks>
+    /// Implemented as a default interface method so existing implementors keep compiling; the default
+    /// ignores the attributes and delegates to <see cref="AuthorizePolicy(GrantPrincipal, string)"/>.
+    /// The concrete <see cref="GrantAuthorizer"/> overrides it to evaluate the condition.
+    /// </remarks>
+    AuthorizationResult AuthorizePolicy(
+        GrantPrincipal principal,
+        string policyName,
+        AuthorizationAttributes? attributes)
+    {
+        _ = attributes;
+        return AuthorizePolicy(principal, policyName);
+    }
 
     /// <summary>
     /// Authorize a principal for several required permissions in one call, returning a result per
@@ -132,8 +169,47 @@ public interface IGrantAuthorizer
     }
 
     /// <summary>
+    /// Authorize a principal against several named policies in one call, supplying attributes for any
+    /// policy that carries an attribute-based (ABAC) condition. The same attributes are applied to
+    /// every policy in the batch. Returns one result per policy in input order.
+    /// </summary>
+    /// <param name="principal">The subject of the decision.</param>
+    /// <param name="policyNames">The policy names to evaluate.</param>
+    /// <param name="attributes">
+    /// The attributes the conditions read. Null synthesizes a principal-only context. Policies with
+    /// no condition ignore it.
+    /// </param>
+    /// <remarks>
+    /// Implemented as a default interface method so existing implementors keep compiling; the default
+    /// delegates per-item to <see cref="AuthorizePolicy(GrantPrincipal, string, AuthorizationAttributes?)"/>.
+    /// The concrete <see cref="GrantAuthorizer"/> overrides it to share a single effective-set
+    /// expansion across the batch.
+    /// </remarks>
+    IReadOnlyList<BatchAuthorizationResult> AuthorizeAllPolicies(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> policyNames,
+        AuthorizationAttributes? attributes)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        ArgumentNullException.ThrowIfNull(policyNames);
+
+        var results = new List<BatchAuthorizationResult>(policyNames.Count);
+        foreach (var policyName in policyNames)
+        {
+            ArgumentException.ThrowIfNullOrEmpty(policyName, nameof(policyNames));
+            results.Add(new BatchAuthorizationResult(
+                policyName,
+                AuthorizePolicy(principal, policyName, attributes)));
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// The effective permission set for a principal: its direct permissions unioned with the
-    /// permissions of every role it holds (unknown roles contribute nothing).
+    /// permissions of every role it holds (unknown roles contribute nothing). This is the allow set
+    /// only; explicit denies are applied during authorization, not subtracted here, so an existing
+    /// caller that reads this set sees the same value as in 0.3.0.
     /// </summary>
     /// <param name="principal">The subject.</param>
     IReadOnlySet<string> EffectivePermissions(GrantPrincipal principal);

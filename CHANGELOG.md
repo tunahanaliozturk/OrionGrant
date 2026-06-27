@@ -6,6 +6,62 @@ All notable changes to OrionGrant are documented in this file. The format is bas
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-27
+
+### Added
+
+Three composable additions to the authorization model. Everything here is additive and
+behavior-compatible: a principal with no denies and a policy with no condition behave exactly as in
+0.3.0, and `EffectivePermissions` returns the same allow set as before.
+
+- **Explicit denies (deny-overrides).** `GrantPrincipal` gains a `Denies` collection of permission
+  patterns. A deny that covers a required permission overrides any allow that also covers it, so a
+  carve-out wins over a grant with documented deny-overrides precedence. Denies use the same wildcard
+  matching as grants (`orders:*` denies every `orders:` permission) and apply uniformly across the
+  single-permission, resource (object-level), and policy paths, including the resource path's
+  ownership and root-wildcard elevation bypass: a deny removes the permission before ownership is
+  even considered. A deny-driven denial carries the new `DenialKind.ExplicitDeny` with the required
+  permission and the `DenyPattern` that blocked it on `DenialReason`.
+- **Attribute-based conditions (ABAC).** A policy may carry an optional `GrantCondition` predicate,
+  added via `OrionGrantBuilder.AddPolicy(name, mode, condition, permissions)`. The condition is an
+  additional AND gate evaluated after the permission requirement passes, against an
+  `AuthorizationAttributes` context (the principal, an optional `ResourceContext`, and a free-form
+  environment attribute bag). New `AuthorizePolicy(principal, policyName, attributes)` and
+  `AuthorizeAllPolicies(principal, policyNames, attributes)` overloads supply the attributes; the
+  existing two-argument overloads synthesize a principal-only context, so a condition that reads only
+  the principal still works without them. A failed condition reports `DenialKind.ConditionUnmet` with
+  the policy name. Policies with no condition ignore supplied attributes entirely. Both overloads are
+  default interface methods, so existing `IGrantAuthorizer` implementors keep compiling.
+- **Per-principal effective-set caching.** Opt-in via `OrionGrantBuilder.UseEffectiveSetCache(capacity)`
+  (or by passing an `IEffectiveGrantCache` to the new `GrantAuthorizer` constructor). The authorizer
+  caches each principal's resolved `EffectiveGrantSet` (its allow union after role and inclusion
+  expansion, plus its explicit denies), so a call site that authorizes the same principal many times
+  in one request does not re-expand the set per check. The cache is keyed on the principal's role,
+  permission, and deny membership, not its subject: a principal whose membership changes computes a
+  different key and never serves a stale decision, so a changed role set is a different key rather
+  than a cache invalidation. The default `BoundedEffectiveGrantCache` is a thread-safe, bounded LRU
+  that caps memory by evicting the least recently used entry on overflow. Without the opt-in the
+  authorizer re-expands per check exactly as in 0.3.0. The cache is registered as a singleton only
+  when requested.
+
+### Tests
+
+49 new tests per target framework (net8.0, net9.0, net10.0): deny-overrides across the permission,
+resource, and policy paths with the structured `ExplicitDeny` cause and the blocking pattern; ABAC
+conditions allowing and denying on principal / resource / environment attributes and composing with
+require-all, require-any, and denies; the cached authorizer returning the same decision as the
+uncached one for every input, not serving a stale decision when a subject's role or deny membership
+changes, order-independent keying, and bounded LRU eviction that still answers correctly after
+eviction; and batch checks honoring denies and conditions per item, each matching the equivalent
+single check.
+
+### Still planned
+
+- **ASP.NET Core integration.** An `AuthorizationHandler` / policy provider that bridges OrionGrant
+  to the framework's `[Authorize]` pipeline, plus result helpers that turn a denied
+  `AuthorizationResult` into a `ForbidResult` or an RFC 9457 ProblemDetails payload. Deferred to a
+  separate companion package so the core stays framework-free; not part of this release.
+
 ## [0.3.0] - 2026-06-22
 
 ### Added
@@ -123,6 +179,7 @@ Initial release. Permission and policy authorization.
 24 tests across the matcher (specification table), the authorizer (direct, role expansion,
 unknown role, effective set, policy all-of/any-of, unknown policy), and registration.
 
+[0.4.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.4.0
 [0.3.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.3.0
 [0.2.1]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.1
 [0.2.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.0

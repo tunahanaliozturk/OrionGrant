@@ -12,6 +12,7 @@ public sealed class OrionGrantBuilder
     private readonly Dictionary<string, HashSet<string>> roles = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<string>> inclusions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, AccessPolicy> policies = new(StringComparer.Ordinal);
+    private int? effectiveSetCacheCapacity;
 
     /// <summary>
     /// Define a role and the permissions it grants. Calling it again for the same role adds to its
@@ -87,6 +88,53 @@ public sealed class OrionGrantBuilder
         return this;
     }
 
+    /// <summary>
+    /// Define a named access policy with an attribute-based (ABAC) condition. The permission
+    /// requirement is evaluated first, exactly as for a plain policy; the condition is an additional
+    /// AND gate evaluated against the authorization attributes supplied at check time. The policy
+    /// grants only when both the permission requirement and the condition are satisfied.
+    /// </summary>
+    /// <param name="name">The policy name.</param>
+    /// <param name="mode">How the permissions combine.</param>
+    /// <param name="condition">The ABAC predicate gating the policy.</param>
+    /// <param name="permissions">The permissions the policy requires.</param>
+    public OrionGrantBuilder AddPolicy(
+        string name,
+        PolicyMode mode,
+        GrantCondition condition,
+        params string[] permissions)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(condition);
+        policies[name] = new AccessPolicy(name, mode, permissions, condition);
+        return this;
+    }
+
+    /// <summary>
+    /// Enable the per-principal effective-set cache. The authorizer then caches each principal's
+    /// resolved effective grant set (its allow union after role and inclusion expansion, plus its
+    /// explicit denies), keyed on the principal's role, permission, and deny membership, so a call
+    /// site that authorizes the same principal many times in one request does not re-expand the set
+    /// on every check. Opt-in: without this call the authorizer re-expands per check exactly as in
+    /// 0.3.0.
+    /// </summary>
+    /// <param name="capacity">
+    /// The maximum number of distinct principal grant sets retained before the least recently used is
+    /// evicted. Must be positive. Defaults to <see cref="BoundedEffectiveGrantCache.DefaultCapacity"/>.
+    /// </param>
+    /// <remarks>
+    /// Correctness rests on the key: because role contents are fixed at build time and the
+    /// principal's own membership is part of the key, a changed role set yields a different key and
+    /// never serves a stale decision. See <see cref="IEffectiveGrantCache"/> for the staleness
+    /// contract.
+    /// </remarks>
+    public OrionGrantBuilder UseEffectiveSetCache(int capacity = BoundedEffectiveGrantCache.DefaultCapacity)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(capacity);
+        effectiveSetCacheCapacity = capacity;
+        return this;
+    }
+
     private HashSet<string> OwnPermissions(string role)
     {
         if (!roles.TryGetValue(role, out var set))
@@ -133,6 +181,15 @@ public sealed class OrionGrantBuilder
 
     internal PolicyRegistry BuildPolicies() =>
         new(new Dictionary<string, AccessPolicy>(policies, StringComparer.Ordinal));
+
+    /// <summary>
+    /// Build the effective-set cache requested via <see cref="UseEffectiveSetCache"/>, or null when
+    /// none was requested (the pure, re-expand-per-check default).
+    /// </summary>
+    internal IEffectiveGrantCache? BuildEffectiveGrantCache() =>
+        effectiveSetCacheCapacity is { } capacity
+            ? new BoundedEffectiveGrantCache(capacity)
+            : null;
 
     /// <summary>
     /// Resolves each role's transitive permission set by folding in the permissions of every role it
