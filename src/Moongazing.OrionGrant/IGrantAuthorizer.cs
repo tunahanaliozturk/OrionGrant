@@ -1,5 +1,6 @@
 namespace Moongazing.OrionGrant;
 
+using Moongazing.OrionGrant.Permissions;
 using Moongazing.OrionGrant.Policies;
 
 /// <summary>
@@ -52,7 +53,11 @@ public interface IGrantAuthorizer
             return permissionResult;
         }
 
-        var effective = EffectivePermissions(principal);
+        // A deny on the required permission is already honored by the Authorize call above. The
+        // interface contract exposes only the allow set (EffectivePermissions is allow-only), so the
+        // default implementation evaluates elevation against an allow-only grant set. The concrete
+        // GrantAuthorizer overrides this method to apply deny-overrides to the elevated grant itself.
+        var effective = new EffectiveGrantSet(EffectivePermissions(principal));
         if (ResourceAccess.IsElevated(effective, opts))
         {
             return AuthorizationResult.Granted;

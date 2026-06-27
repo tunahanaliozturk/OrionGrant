@@ -148,6 +148,101 @@ public sealed class ExplicitDenyTests
     }
 
     [Fact]
+    public void Deny_on_a_configured_elevated_permission_strips_the_bypass_and_ownership_governs()
+    {
+        using var diag = new GrantDiagnostics();
+        var authorizer = Build(diag);
+        // The principal holds the base permission and an elevated "any" grant, but the elevated grant
+        // is explicitly denied. The base permission is NOT denied, so deny-overrides must apply to the
+        // elevated grant itself: the bypass is removed and ownership governs, which fails here.
+        var principal = new GrantPrincipal
+        {
+            Subject = "support-agent",
+            Permissions = ["accounts:read", "accounts:read:any"],
+            Denies = ["accounts:read:any"],
+        };
+        var resource = ResourceContext.OwnedBy("some-customer");
+        var options = new ResourceAuthorizationOptions
+        {
+            ElevatedPermissions = ["accounts:read:any"],
+        };
+
+        var result = authorizer.Authorize(principal, "accounts:read", resource, options);
+
+        Assert.False(result.IsGranted);
+        // The required permission was held and not denied, so the denial is ownership, not the deny:
+        // the deny only stripped the elevated bypass.
+        Assert.Equal(DenialKind.ResourceOwnership, result.Denial!.Kind);
+    }
+
+    [Fact]
+    public void Deny_on_the_root_wildcard_strips_elevation_for_an_unrelated_required_permission()
+    {
+        using var diag = new GrantDiagnostics();
+        var authorizer = Build(diag);
+        // The root grant is the only thing that both grants the required permission and elevates. A
+        // deny on the root wildcard itself must remove the elevated bypass; ownership then governs.
+        var principal = new GrantPrincipal
+        {
+            Subject = "admin",
+            Permissions = ["*"],
+            Denies = ["*"],
+        };
+        var resource = ResourceContext.OwnedBy("someone-else");
+
+        // The base permission gate also fails once the deny on "*" covers it, so the principal is
+        // denied. Either way no elevated grant survives the deny.
+        var result = authorizer.Authorize(principal, "accounts:read", resource);
+
+        Assert.False(result.IsGranted);
+        Assert.Equal(DenialKind.ExplicitDeny, result.Denial!.Kind);
+    }
+
+    [Fact]
+    public void A_non_denied_elevated_grant_still_authorizes_on_the_resource_path()
+    {
+        using var diag = new GrantDiagnostics();
+        var authorizer = Build(diag);
+        // Regression guard: an elevated grant that is NOT denied must continue to bypass ownership.
+        var principal = new GrantPrincipal
+        {
+            Subject = "support-agent",
+            Permissions = ["accounts:read", "accounts:read:any"],
+            Denies = ["billing:write"],
+        };
+        var resource = ResourceContext.OwnedBy("some-customer");
+        var options = new ResourceAuthorizationOptions
+        {
+            ElevatedPermissions = ["accounts:read:any"],
+        };
+
+        var result = authorizer.Authorize(principal, "accounts:read", resource, options);
+
+        Assert.True(result.IsGranted);
+        Assert.Null(result.Denial);
+    }
+
+    [Fact]
+    public void A_non_denied_root_wildcard_still_bypasses_ownership_on_the_resource_path()
+    {
+        using var diag = new GrantDiagnostics();
+        var authorizer = Build(diag);
+        // Regression guard: a root grant with an unrelated carve-out must still elevate.
+        var principal = new GrantPrincipal
+        {
+            Subject = "admin",
+            Permissions = ["*"],
+            Denies = ["accounts:delete"],
+        };
+        var resource = ResourceContext.OwnedBy("someone-else");
+
+        var result = authorizer.Authorize(principal, "accounts:read", resource);
+
+        Assert.True(result.IsGranted);
+        Assert.Null(result.Denial);
+    }
+
+    [Fact]
     public void Deny_overrides_a_require_all_policy_permission()
     {
         using var diag = new GrantDiagnostics();

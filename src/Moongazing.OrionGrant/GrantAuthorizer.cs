@@ -144,8 +144,10 @@ public sealed class GrantAuthorizer : IGrantAuthorizer
                 DenialReason.MissingPermission(requiredPermission));
         }
 
-        // Owner OR elevated: an admin/root or a configured elevated grant bypasses ownership.
-        var granted = ResourceAccess.IsElevated(grants.Allows, opts)
+        // Owner OR elevated: an admin/root or a configured elevated grant bypasses ownership. The
+        // elevated check honors deny-overrides, so an elevated grant that is itself explicitly denied
+        // does not bypass ownership.
+        var granted = ResourceAccess.IsElevated(grants, opts)
             || ResourceAccess.IsOwner(principal, resource, opts);
 
         diagnostics.Record(granted, "resource");
