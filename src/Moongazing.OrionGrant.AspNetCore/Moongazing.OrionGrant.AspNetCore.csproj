@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>OrionGrant.AspNetCore</PackageId>
+    <RootNamespace>Moongazing.OrionGrant.AspNetCore</RootNamespace>
+    <Description>ASP.NET Core authorization integration for OrionGrant: an IAuthorizationHandler, requirement, and policy provider that bridge OrionGrant permission and policy checks to the framework's [Authorize] pipeline, with RequirePermission / RequirePolicy builder extensions, resource-based (object-level) authorization, and structured denial reasons surfaced as authorization failures.</Description>
+    <PackageTags>authorization;aspnetcore;permissions;rbac;policy;authorize;orion</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Moongazing.OrionGrant\Moongazing.OrionGrant.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Moongazing.OrionGrant.AspNetCore.Tests" />
+  </ItemGroup>
+</Project>
