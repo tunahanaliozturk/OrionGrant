@@ -6,6 +6,44 @@ All notable changes to OrionGrant are documented in this file. The format is bas
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-06-28
+
+### Added
+
+A new companion package, **`OrionGrant.AspNetCore`** (PackageId `OrionGrant.AspNetCore`), that
+bridges OrionGrant to the ASP.NET Core authorization pipeline. The core library stays framework-free;
+this package adds the framework-facing glue. Everything here is additive: the core package is
+unchanged, and no existing API moves or breaks.
+
+- **OrionGrant authorization handler and requirement.** `OrionGrantRequirement` is an
+  `IAuthorizationRequirement` for a single permission (`ForPermission`) or a named OrionGrant policy
+  (`ForPolicy`). `OrionGrantAuthorizationHandler` resolves the current `ClaimsPrincipal` to a
+  `GrantPrincipal` and runs the matching `IGrantAuthorizer` check, so `[Authorize]` with an OrionGrant
+  requirement works through the standard pipeline.
+- **Principal resolution seam.** `IGrantPrincipalResolver` turns the `ClaimsPrincipal` into an
+  OrionGrant `GrantPrincipal`. The default `ClaimsGrantPrincipalResolver` reads the subject, roles,
+  permissions, and explicit denies from claims, with the claim types configurable through
+  `OrionGrantClaimsOptions` (and a JWT `sub` fallback for the subject). Register your own resolver to
+  source grants from elsewhere.
+- **Policy builder extensions.** `RequirePermission(string)` and `RequirePolicy(string)` on
+  `AuthorizationPolicyBuilder` add an OrionGrant requirement to any ASP.NET Core authorization policy.
+- **Dynamic policy provider.** `OrionGrantPolicyProvider` resolves `[Authorize(Policy = "perm:...")]`
+  and `[Authorize(Policy = "policy:...")]` names to OrionGrant checks without pre-registering each
+  policy, and defers to the framework's `DefaultAuthorizationPolicyProvider` for every other name. The
+  prefixes are configurable through `OrionGrantPolicyNameOptions`.
+- **Resource-based (object-level) authorization.** Passing an `OrionGrantResource` (or a bare
+  `ResourceContext`) as the resource to `IAuthorizationService.AuthorizeAsync(user, resource, requirement)`
+  drives OrionGrant's ownership-aware / IDOR-resistant check from the framework.
+- **Structured denial reasons surfaced as failures.** A denied decision calls `context.Fail` with an
+  `OrionGrantAuthorizationFailureReason` carrying the full OrionGrant `AuthorizationResult` and its
+  structured `DenialReason`, so a consumer reading `AuthorizationFailure.FailureReasons` can branch on
+  `DenialKind` (or render an RFC 9457 ProblemDetails) rather than parsing prose.
+- **One-call registration.** `IServiceCollection.AddOrionGrantAuthorization(configure?)` wires the core
+  OrionGrant services, the handler, the default resolver, the options, and the policy provider.
+
+The package multi-targets `net8.0`, `net9.0`, and `net10.0` and references the
+`Microsoft.AspNetCore.App` shared framework.
+
 ## [0.4.0] - 2026-06-27
 
 ### Added

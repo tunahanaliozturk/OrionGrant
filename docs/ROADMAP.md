@@ -2,11 +2,12 @@
 
 Where OrionGrant is, what has shipped, and what is likely next.
 
-OrionGrant is at `0.4.0`: a dependency-light permission and policy authorization library for .NET, with
+OrionGrant is at `0.5.0`: a dependency-light permission and policy authorization library for .NET, with
 hierarchical wildcard permissions, roles (including role-to-role composition), named all-of / any-of
 policies, resource / ownership-aware (object-level) checks, explicit denies (deny-overrides),
 attribute-based (ABAC) policy conditions, an opt-in per-principal effective-set cache, structured
-denial reasons, and batch checks.
+denial reasons, and batch checks, plus an ASP.NET Core companion package that bridges all of this to
+the framework's `[Authorize]` pipeline.
 The core model is stable in shape. The forward plan below lists what is likely next,
 grouped by milestone. Milestones are direction, not contracts: items move forward when real workloads ask
 for them. If something here matters to you, open an issue and say so, that is what moves an item up the list.
@@ -69,6 +70,16 @@ What was on this list and has since landed. See [CHANGELOG.md](../CHANGELOG.md) 
   changed membership is a different key and never serves a stale decision. The default
   `BoundedEffectiveGrantCache` is a thread-safe bounded LRU; the pure re-expand-per-check default is
   unchanged when the cache is not enabled.
+- **ASP.NET Core integration** (`0.5.0`). A new companion package, `OrionGrant.AspNetCore`, bridges
+  OrionGrant to the framework's `[Authorize]` pipeline: an `IAuthorizationHandler` and
+  `OrionGrantRequirement` that resolve the current `ClaimsPrincipal` to a `GrantPrincipal` (via a
+  pluggable `IGrantPrincipalResolver`, default claims-based) and run the `IGrantAuthorizer` check;
+  `RequirePermission` / `RequirePolicy` builder extensions; an `IAuthorizationPolicyProvider` that
+  resolves `perm:` / `policy:` policy names; resource-based (object-level) authorization through the
+  resource overload of `IAuthorizationService.AuthorizeAsync`; and an
+  `OrionGrantAuthorizationFailureReason` that surfaces the structured `DenialReason` on the framework
+  failure. The core stays framework-free; this glue lives in its own package. The deny and ABAC
+  additions in `0.4.0` supplied the decision semantics it surfaces.
 
 ---
 
@@ -78,11 +89,6 @@ Candidates grouped by the milestone they would most likely land in. Order within
 
 ### Companion packages (alongside the core, framework-free core preserved)
 
-- **ASP.NET Core integration** (still planned). An `AuthorizationHandler` / policy provider that
-  bridges OrionGrant policies to the framework's `[Authorize]` pipeline, plus result helpers that turn
-  a denied `AuthorizationResult` into a `ForbidResult` or an RFC 9457 ProblemDetails payload. Kept in
-  its own package so the core stays framework-free; the deny and ABAC additions in `0.4.0` give it the
-  decision semantics (deny-overrides precedence, condition results) it will surface to the framework.
 - **Source-generated policy and permission constants.** Generate strongly-typed names from a declared
   policy set so call sites reference symbols instead of magic strings.
 
