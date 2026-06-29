@@ -41,7 +41,12 @@ public sealed class ClaimsGrantPrincipalResolver : IGrantPrincipalResolver
             return new ValueTask<GrantPrincipal?>((GrantPrincipal?)null);
         }
 
-        var subject = user.FindFirstValue(options.SubjectClaimType)
+        // Read the configured subject claim, then always fall back to the standard JWT 'sub' claim.
+        // The fallback fires both when the configured claim is absent and when no subject claim type
+        // is configured, so 'sub' remains the floor identity source rather than being bypassed.
+        var subject = (string.IsNullOrEmpty(options.SubjectClaimType)
+                ? null
+                : user.FindFirstValue(options.SubjectClaimType))
             ?? user.FindFirstValue(JwtSubClaimType);
 
         if (string.IsNullOrEmpty(subject))

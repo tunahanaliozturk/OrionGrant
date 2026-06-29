@@ -34,4 +34,27 @@ public sealed class OrionGrantClaimsOptions
     /// one deny entry. Defaults to <c>deny</c>.
     /// </summary>
     public string DenyClaimType { get; set; } = "deny";
+
+    /// <summary>
+    /// The validation message produced when one of the configured claim types is null, empty, or
+    /// whitespace. Used by <see cref="IsValid(OrionGrantClaimsOptions)"/> at registration.
+    /// </summary>
+    internal const string ValidationError =
+        "OrionGrantClaimsOptions requires non-empty SubjectClaimType, RoleClaimType, " +
+        "PermissionClaimType, and DenyClaimType: an empty claim type would silently read no claims.";
+
+    /// <summary>
+    /// True when every configured claim type is non-empty. An empty claim type is rejected at startup
+    /// because <see cref="ClaimsPrincipal.FindAll(string)"/> against an empty type silently matches
+    /// nothing, turning a typo into an unauthenticated principal rather than a clear failure.
+    /// </summary>
+    /// <param name="options">The options to validate.</param>
+    internal static bool IsValid(OrionGrantClaimsOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return !string.IsNullOrWhiteSpace(options.SubjectClaimType)
+            && !string.IsNullOrWhiteSpace(options.RoleClaimType)
+            && !string.IsNullOrWhiteSpace(options.PermissionClaimType)
+            && !string.IsNullOrWhiteSpace(options.DenyClaimType);
+    }
 }

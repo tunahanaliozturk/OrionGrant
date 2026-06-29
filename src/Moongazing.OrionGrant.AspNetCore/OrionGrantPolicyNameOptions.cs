@@ -22,4 +22,25 @@ public sealed class OrionGrantPolicyNameOptions
     /// prefix disables policy-name resolution.
     /// </summary>
     public string PolicyPrefix { get; set; } = "policy:";
+
+    /// <summary>
+    /// The validation message produced when either prefix is null. Used by
+    /// <see cref="IsValid(OrionGrantPolicyNameOptions)"/> at registration.
+    /// </summary>
+    internal const string ValidationError =
+        "OrionGrantPolicyNameOptions.PermissionPrefix and PolicyPrefix must not be null. Use an " +
+        "empty string to disable a prefix; null is rejected because the policy provider matches " +
+        "names against these prefixes.";
+
+    /// <summary>
+    /// True when neither prefix is null. An empty prefix is a legal way to disable a prefix, so only
+    /// null is rejected: the provider calls <see cref="string.StartsWith(string, StringComparison)"/>
+    /// with these values and a null would throw on every policy-name lookup.
+    /// </summary>
+    /// <param name="options">The options to validate.</param>
+    internal static bool IsValid(OrionGrantPolicyNameOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.PermissionPrefix is not null && options.PolicyPrefix is not null;
+    }
 }
