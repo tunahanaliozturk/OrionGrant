@@ -72,6 +72,14 @@ See [docs/FEATURES.md](docs/FEATURES.md) for the full breakdown of the public su
 dotnet add package OrionGrant
 ```
 
+For ASP.NET Core, the companion package bridges OrionGrant to the built-in `[Authorize]` pipeline:
+
+```
+dotnet add package OrionGrant.AspNetCore
+```
+
+It adds `AddOrionGrantAuthorization` plus `RequirePermission(...)` / `RequirePolicy(...)` endpoint helpers and an `IAuthorizationHandler` / policy-provider bridge, so an OrionGrant policy is enforced through standard `[Authorize]` attributes and minimal-API metadata.
+
 ## Quick start
 
 Register roles and policies once at startup:
@@ -356,7 +364,7 @@ you care about.
 
 ## Versioning
 
-OrionGrant follows [Semantic Versioning](https://semver.org/). The current line is `0.3.0`
+OrionGrant follows [Semantic Versioning](https://semver.org/). The current line is `0.5.0`
 (pre-1.0): the public API may still change between minor versions while the design settles. The
 library multi-targets `net8.0`, `net9.0`, and `net10.0`, builds with `TreatWarningsAsErrors`,
 nullable reference types enabled, and `latest-recommended` analyzers. See [CHANGELOG.md](CHANGELOG.md)
