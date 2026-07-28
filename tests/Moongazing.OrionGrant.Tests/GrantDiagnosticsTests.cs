@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 
 using Moongazing.OrionGrant;
+using Moongazing.Orion.Abstractions.Diagnostics;
 using Moongazing.OrionGrant.Diagnostics;
 using Moongazing.OrionGrant.Policies;
 
@@ -42,7 +43,7 @@ public sealed class GrantDiagnosticsTests
             string kind = string.Empty;
             foreach (var tag in tags)
             {
-                if (tag.Key == "outcome")
+                if (tag.Key == OrionTelemetry.Tags.Outcome)
                 {
                     outcome = (string)tag.Value!;
                 }

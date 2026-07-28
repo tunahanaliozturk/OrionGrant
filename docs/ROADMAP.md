@@ -38,7 +38,7 @@ What was on this list and has since landed. See [CHANGELOG.md](../CHANGELOG.md) 
   (`ResourceAuthorizationOptions.ElevatedPermissions`, with a root `*` bypass on by default). This closes
   the IDOR gap, where holding `accounts:read` is necessary but not sufficient to read an account the
   principal does not own. Added as a default interface method, so existing implementors keep compiling.
-  Resource decisions are tagged `kind=resource` on the `oriongrant.decisions` counter.
+  Resource decisions are tagged `kind=resource` on the `orion.grant.decisions` counter.
 - **Allocation-free permission matching** (`0.2.1`). `PermissionMatcher.IsGranted` now walks the
   colon-separated segments of both strings as `ReadOnlySpan<char>` and compares them ordinally in place,
   rather than splitting each into segment arrays per check. Matching semantics are unchanged; the two

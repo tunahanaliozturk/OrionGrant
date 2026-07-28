@@ -6,6 +6,31 @@ All notable changes to OrionGrant are documented in this file. The format is bas
 [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-07-28
+
+### Changed
+
+- **Converged the OpenTelemetry instrumentation onto the frozen `Orion.Abstractions` 1.0 spine.**
+  `GrantDiagnostics` now derives from `OrionInstrumentation` and names its metric through
+  `OrionTelemetry`, so OrionGrant shares the family's naming and static-tag conventions. Multi-tenant
+  / multi-region labels set via `OrionInstrumentation.SetStaticTags` are stamped onto every
+  measurement, and the meter version now tracks the package version automatically (it was pinned at a
+  stale `0.2.0` literal). References `Orion.Abstractions` 1.0.0.
+
+  **Breaking (telemetry only): metric and tag names changed.** The meter name is unchanged
+  (`Moongazing.OrionGrant` — subscribers keep working). Update dashboards/alerts:
+
+  | Before | After |
+  | --- | --- |
+  | `oriongrant.decisions` | `orion.grant.decisions` |
+  | tag `outcome` | tag `orion.outcome` |
+  | per-measurement `instance` tag | meter-level `orion.instance` tag (set via the `instanceTag` ctor) |
+
+  The `kind` tag and every tag value (`granted`/`denied`, `permission`/`policy`/`resource`) are
+  unchanged, as is the `Record(bool, string)` / `MeterName` / `Decisions` public surface. The
+  `instanceTag` constructor argument now publishes `orion.instance` on the meter (per the spine's
+  instance-scoping convention) rather than on each measurement; `InstanceTag` still returns it.
+
 ## [0.5.0] - 2026-07-20
 
 ### Added
@@ -217,6 +242,8 @@ Initial release. Permission and policy authorization.
 24 tests across the matcher (specification table), the authorizer (direct, role expansion,
 unknown role, effective set, policy all-of/any-of, unknown policy), and registration.
 
+[0.6.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.6.0
+[0.5.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.5.0
 [0.4.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.4.0
 [0.3.0]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.3.0
 [0.2.1]: https://github.com/tunahanaliozturk/OrionGrant/releases/tag/v0.2.1

@@ -331,7 +331,7 @@ per-request configuration cost.
 `GrantDiagnostics` owns a `System.Diagnostics.Metrics.Meter` named `Moongazing.OrionGrant` (exposed
 as `GrantDiagnostics.MeterName`). It publishes a single counter:
 
-- `oriongrant.decisions`, unit `{decision}`, tagged `outcome` (`granted` / `denied`) and `kind`
+- `orion.grant.decisions`, unit `{decision}`, tagged `orion.outcome` (`granted` / `denied`) and `kind`
   (`permission` / `policy` / `resource`).
 
 The authorizer records one decision per `Authorize` and `AuthorizePolicy` call, including denials
@@ -348,5 +348,5 @@ singleton it registers.
 - Nullable reference types enabled, implicit usings enabled.
 - `TreatWarningsAsErrors`, `EnforceCodeStyleInBuild`, `AnalysisLevel` `latest-recommended`.
 - XML documentation generated for the public API.
-- The only runtime dependency is `Microsoft.Extensions.DependencyInjection.Abstractions`.
+- The runtime dependencies are `Microsoft.Extensions.DependencyInjection.Abstractions` and `Orion.Abstractions` (the family's shared contracts spine).
 </content>

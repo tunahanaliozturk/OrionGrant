@@ -6,6 +6,7 @@ using System.Diagnostics.Metrics;
 using System.Linq;
 
 using Moongazing.OrionGrant;
+using Moongazing.Orion.Abstractions.Diagnostics;
 using Moongazing.OrionGrant.Diagnostics;
 using Moongazing.OrionGrant.Policies;
 
@@ -135,7 +136,7 @@ public sealed class BatchAuthorizationTests
         {
             foreach (var tag in tags)
             {
-                if (tag.Key == "outcome")
+                if (tag.Key == OrionTelemetry.Tags.Outcome)
                 {
                     outcomes.Add((string)tag.Value!);
                 }

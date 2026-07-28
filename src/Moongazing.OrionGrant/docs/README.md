@@ -81,7 +81,7 @@ policy name, so you can change what it requires without touching call sites.
 
 ## Telemetry
 
-Subscribe to the `Moongazing.OrionGrant` meter: `oriongrant.decisions` is tagged `outcome`
+Subscribe to the `Moongazing.OrionGrant` meter: `orion.grant.decisions` is tagged `orion.outcome`
 (granted/denied) and `kind` (permission/policy).
 
 ## Design
