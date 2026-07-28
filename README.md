@@ -68,17 +68,17 @@ See [docs/FEATURES.md](docs/FEATURES.md) for the full breakdown of the public su
 
 ## Install
 
-```
+```bash
 dotnet add package OrionGrant
 ```
 
 For ASP.NET Core, the companion package bridges OrionGrant to the built-in `[Authorize]` pipeline:
 
-```
+```bash
 dotnet add package OrionGrant.AspNetCore
 ```
 
-It adds `AddOrionGrantAuthorization` plus `RequirePermission(...)` / `RequirePolicy(...)` endpoint helpers and an `IAuthorizationHandler` / policy-provider bridge, so an OrionGrant policy is enforced through standard `[Authorize]` attributes and minimal-API metadata.
+It adds `AddOrionGrantAuthorization` plus `RequirePermission(...)` / `RequirePolicy(...)` extensions on `AuthorizationPolicyBuilder`, and an `IAuthorizationHandler` / policy-provider bridge, so an OrionGrant permission check is enforced through the standard `[Authorize]` pipeline.
 
 ## Quick start
 
