@@ -18,7 +18,8 @@
 Define permissions as colon-scoped hierarchies with wildcards, group them into roles, and check
 whether a principal is allowed an action, either by a single permission or by a named policy. The
 matching rules are pure functions you can unit-test, and the library depends only on
-`Microsoft.Extensions.DependencyInjection.Abstractions`.
+`Microsoft.Extensions.DependencyInjection.Abstractions` and `Orion.Abstractions` (the family's
+shared contracts spine, which supplies the `OrionInstrumentation` telemetry base).
 
 Part of the **Orion** family. Pairs naturally with [OrionLedger](https://github.com/tunahanaliozturk/OrionLedger)
 API-key scopes (feed the issued scopes straight into a principal's permissions), and works entirely
@@ -249,7 +250,7 @@ authorizer.Authorize(admin, "accounts:read", account).IsGranted;   // true - roo
 ```
 
 The overload is a default interface method on `IGrantAuthorizer`, so existing implementors keep
-compiling. Resource-aware decisions are recorded on the `oriongrant.decisions` counter with
+compiling. Resource-aware decisions are recorded on the `orion.grant.decisions` counter with
 `kind=resource`.
 
 ### Structured denial reasons
@@ -331,7 +332,7 @@ registration into immutable registries, so configuration is read at startup, not
 `GrantDiagnostics` exposes a `System.Diagnostics.Metrics` meter named `Moongazing.OrionGrant`
 (also available as `GrantDiagnostics.MeterName`). It publishes one counter:
 
-- `oriongrant.decisions` (unit `{decision}`) tagged `outcome` (`granted` / `denied`) and `kind`
+- `orion.grant.decisions` (unit `{decision}`) tagged `orion.outcome` (`granted` / `denied`) and `kind`
   (`permission` / `policy`).
 
 Subscribe to it from OpenTelemetry like any other meter:

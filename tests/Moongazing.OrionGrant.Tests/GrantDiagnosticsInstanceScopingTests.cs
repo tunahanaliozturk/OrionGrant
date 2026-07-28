@@ -2,15 +2,19 @@ namespace Moongazing.OrionGrant.Tests;
 
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
+using System.Linq;
 
+using Moongazing.Orion.Abstractions.Diagnostics;
 using Moongazing.OrionGrant.Diagnostics;
 
 using Xunit;
 
 /// <summary>
-/// Coverage of <see cref="GrantDiagnostics"/> instance scoping: the optional <c>instance</c> tag
-/// lets a <see cref="MeterListener"/> disambiguate measurements when more than one instance shares
-/// the meter name. These tests filter strictly by the instrument <em>instance</em> and run in a
+/// Coverage of <see cref="GrantDiagnostics"/> instance scoping. Built on the
+/// <see cref="OrionInstrumentation"/> spine, the optional instance scope is published on the
+/// <see cref="Meter"/> itself (the <see cref="OrionInstrumentation.InstanceTagKey"/> tag) rather than
+/// on every measurement, so a <see cref="MeterListener"/> disambiguates instances by reading the
+/// meter's tags. These tests filter strictly by the instrument <em>instance</em> and run in a
 /// non-parallel collection so two coexisting diagnostics objects cannot leak measurements into one
 /// another's listener.
 /// </summary>
@@ -18,6 +22,10 @@ using Xunit;
 public sealed class GrantDiagnosticsInstanceScopingTests
 {
     private sealed record Measurement(string Outcome, string Kind, string? Instance);
+
+    private static string? InstanceOf(Instrument instrument) =>
+        instrument.Meter.Tags?
+            .FirstOrDefault(t => t.Key == OrionInstrumentation.InstanceTagKey).Value as string;
 
     private static List<Measurement> CollectFrom(GrantDiagnostics diagnostics, System.Action act)
     {
@@ -36,24 +44,21 @@ public sealed class GrantDiagnosticsInstanceScopingTests
         {
             string outcome = string.Empty;
             string kind = string.Empty;
-            string? instance = null;
             foreach (var tag in tags)
             {
                 switch (tag.Key)
                 {
-                    case "outcome":
+                    case var k when k == OrionTelemetry.Tags.Outcome:
                         outcome = (string)tag.Value!;
                         break;
                     case "kind":
                         kind = (string)tag.Value!;
                         break;
-                    case "instance":
-                        instance = (string)tag.Value!;
-                        break;
                 }
             }
 
-            captured.Add(new Measurement(outcome, kind, instance));
+            // The instance scope is a meter-level tag under the spine, not a per-measurement tag.
+            captured.Add(new Measurement(outcome, kind, InstanceOf(instrument)));
         });
         listener.Start();
 
