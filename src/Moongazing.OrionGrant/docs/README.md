@@ -1,69 +1,43 @@
 # OrionGrant
 
-[![CI/CD](https://github.com/tunahanaliozturk/OrionGrant/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/tunahanaliozturk/OrionGrant/actions/workflows/ci-cd.yml)
-[![NuGet](https://img.shields.io/nuget/v/OrionGrant.svg)](https://www.nuget.org/packages/OrionGrant/)
+Permission and policy authorization for .NET: colon-scoped permissions with wildcards, roles that compose, named all-of / any-of policies, explicit denies, ABAC conditions and owner-aware (IDOR-resistant) checks. Pure, synchronous and free of any web framework.
 
-Permission and policy authorization for .NET. Define permissions as colon-scoped hierarchies with
-wildcards, group them into roles, and check whether a principal is allowed an action, either by a
-single permission or by a named policy.
-
-Part of the **Orion** family. Pairs naturally with [OrionLedger](https://github.com/tunahanaliozturk/OrionLedger)
-API-key scopes, and works entirely on its own.
-
-## Why
-
-Most apps grow an ad-hoc tangle of `if (user.IsAdmin || user.Roles.Contains(...))`. OrionGrant
-replaces that with a small, testable model: permissions like `orders:read`, wildcards like
-`orders:*`, roles that bundle permissions, and policies that combine requirements. The matching
-rules are pure functions you can unit-test, and the whole thing has no framework dependency.
+![Permission check: build the effective grant set; a matching deny gives ExplicitDeny, no matching allow gives MissingPermission, otherwise granted; the resource overload then grants an elevated principal or the owner and denies anyone else with ResourceOwnership](https://raw.githubusercontent.com/tunahanaliozturk/OrionGrant/main/docs/diagrams/permission-check.png)
 
 ## Install
 
-```
-dotnet add package OrionGrant
-```
+    dotnet add package OrionGrant
+
+Targets `net8.0`, `net9.0` and `net10.0`. Depends on `Microsoft.Extensions.DependencyInjection.Abstractions` and `Orion.Abstractions`.
 
 ## Quick start
 
 ```csharp
+using Moongazing.OrionGrant;
+using Moongazing.OrionGrant.Policies;
+
 builder.Services.AddOrionGrant(grant => grant
     .AddRole("orders.manager", "orders:*")
     .AddRole("auditor", "orders:read", "billing:read")
-    .AddPolicy("orders.write", PolicyMode.RequireAll, "orders:write")
-    .AddPolicy("orders.touch", PolicyMode.RequireAny, "orders:read", "orders:write"));
-```
+    .AddPolicy("orders.write", PolicyMode.RequireAll, "orders:write"));
 
-```csharp
-public sealed class OrdersController(IGrantAuthorizer authorizer)
+public sealed class OrderService(IGrantAuthorizer authorizer)
 {
-    public IActionResult Update(GrantPrincipal caller)
+    public void Update(GrantPrincipal caller, Order order)
     {
         var decision = authorizer.AuthorizePolicy(caller, "orders.write");
         if (!decision.IsGranted)
         {
-            return Forbid(decision.FailureReason!);
+            throw new UnauthorizedAccessException(decision.FailureReason);
         }
         // ...
     }
 }
 ```
 
-A principal is just a subject plus the roles and direct permissions it carries (build it from
-your API key, JWT claims, or session):
-
-```csharp
-var caller = new GrantPrincipal
-{
-    Subject = apiKey.Id,
-    Roles = apiKey.Roles,
-    Permissions = apiKey.Scopes,   // e.g. straight from OrionLedger
-};
-```
+A `GrantPrincipal` is a `Subject` plus the `Roles`, direct `Permissions` and `Denies` it carries, built from claims, an API key or a session.
 
 ## Permission matching
-
-Permissions are colon-separated. A `*` segment matches one segment in the middle, or one-or-more
-segments when it is last:
 
 | Granted | Covers | Does not cover |
 |---------|--------|----------------|
@@ -72,25 +46,32 @@ segments when it is last:
 | `orders:*:read` | `orders:eu:read` | `orders:eu:write` |
 | `*` | everything | nothing |
 
-## Roles and policies
+The rules live in the static `PermissionMatcher` (`IsGranted`, `IsGrantedByAny`), usable without DI.
 
-A **role** bundles permissions; a principal's effective set is its direct permissions unioned with
-every role it holds (unknown roles contribute nothing). A **policy** is a named requirement:
-`RequireAll` needs every listed permission, `RequireAny` needs at least one. Endpoints depend on a
-policy name, so you can change what it requires without touching call sites.
+## What a check does
+
+- **Roles**: `AddRole` bundles permissions; `IncludeRole` composes roles transitively. Inclusion cycles throw `RoleInclusionCycleException` at registration. Unknown roles grant nothing.
+- **Denies win**: a pattern in `GrantPrincipal.Denies` overrides any matching allow, ownership and elevation.
+- **Policies**: `RequireAll` needs every listed permission, `RequireAny` at least one. `AddPolicy(name, mode, condition, permissions)` adds a `GrantCondition` over `AuthorizationAttributes` (principal, resource, environment), AND-ed with the permissions.
+- **Resource-aware**: `Authorize(principal, permission, resource, options)` also needs the principal to own the resource (`ResourceContext.OwnerId` equals `Subject`, `StringComparison.Ordinal` by default) or hold an elevated grant (root `*` by default, or `ResourceAuthorizationOptions.ElevatedPermissions`).
+- **Batch**: `AuthorizeAll` and `AuthorizeAllPolicies` expand the effective set once for many checks.
+- **Cache**: `UseEffectiveSetCache(capacity)` (default 1024) caches expanded grant sets; off by default.
+
+## Results, not exceptions
+
+Every check returns an `AuthorizationResult`: `IsGranted`, a human-readable `FailureReason`, and a structured `Denial` whose `DenialKind` is `MissingPermission`, `PolicyNotFound`, `PolicyRequirementUnmet`, `ResourceOwnership`, `ExplicitDeny` or `ConditionUnmet`. An unknown policy is a denial, not an exception.
 
 ## Telemetry
 
-Subscribe to the `Moongazing.OrionGrant` meter: `orion.grant.decisions` is tagged `orion.outcome`
-(granted/denied) and `kind` (permission/policy).
+Meter `Moongazing.OrionGrant` (`GrantDiagnostics.MeterName`) with counter `orion.grant.decisions`, tagged `orion.outcome` (`granted` / `denied`) and `kind` (`permission` / `policy` / `resource`).
 
-## Design
+## Related packages
 
-- Multi-targets `net8.0`, `net9.0`, `net10.0`.
-- `TreatWarningsAsErrors`, latest analyzers, nullable enabled.
-- The matcher and the authorizer are pure and synchronous, so authorization is allocation-light
-  and trivially unit-testable.
+- `OrionGrant.AspNetCore` - runs these checks through ASP.NET Core `[Authorize]`, with `perm:` / `policy:` policy names and claims-based principals.
+- `Orion.Abstractions` - the Orion family's shared contracts and telemetry spine.
 
-## License
+## Links
 
-MIT.
+- Documentation and full README: https://github.com/tunahanaliozturk/OrionGrant
+- Changelog: https://github.com/tunahanaliozturk/OrionGrant/blob/main/CHANGELOG.md
+- License: MIT

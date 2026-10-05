@@ -85,12 +85,15 @@ public sealed class GrantPrincipal
     public required string Subject { get; init; }
     public IReadOnlyCollection<string> Roles { get; init; } = [];
     public IReadOnlyCollection<string> Permissions { get; init; } = [];
+    public IReadOnlyCollection<string> Denies { get; init; } = [];
 }
 ```
 
 - `Subject` is a stable identifier (a user id, an API key id, a service name). It is required.
 - `Roles` are expanded through the role registry; unknown roles are ignored.
 - `Permissions` are granted to the subject directly, in addition to those it inherits from roles.
+- `Denies` are permission patterns the subject must not have. A deny uses the same wildcard matching
+  and overrides any matching allow (deny-overrides), including ownership and elevated grants.
 
 Build a principal from whatever your application already trusts: API-key scopes (for example issued
 by OrionLedger), JWT claims, or a session.
@@ -185,12 +188,20 @@ public interface IGrantAuthorizer
         ResourceContext resource,
         ResourceAuthorizationOptions? options = null);   // default interface method
     AuthorizationResult AuthorizePolicy(GrantPrincipal principal, string policyName);
+    AuthorizationResult AuthorizePolicy(
+        GrantPrincipal principal,
+        string policyName,
+        AuthorizationAttributes? attributes);   // default interface method
     IReadOnlyList<BatchAuthorizationResult> AuthorizeAll(
         GrantPrincipal principal,
         IReadOnlyCollection<string> requiredPermissions);   // default interface method
     IReadOnlyList<BatchAuthorizationResult> AuthorizeAllPolicies(
         GrantPrincipal principal,
         IReadOnlyCollection<string> policyNames);   // default interface method
+    IReadOnlyList<BatchAuthorizationResult> AuthorizeAllPolicies(
+        GrantPrincipal principal,
+        IReadOnlyCollection<string> policyNames,
+        AuthorizationAttributes? attributes);   // default interface method
     IReadOnlySet<string> EffectivePermissions(GrantPrincipal principal);
 }
 ```
@@ -250,6 +261,8 @@ public enum DenialKind
     PolicyNotFound,           // no policy registered under that name
     PolicyRequirementUnmet,   // a found policy's RequireAll / RequireAny rule was not satisfied
     ResourceOwnership,        // base permission held, but not owner and not elevated
+    ExplicitDeny,             // an allow covered it, but an explicit deny on the principal did too
+    ConditionUnmet,           // a policy's ABAC condition returned false
 }
 
 public sealed class DenialReason
@@ -260,6 +273,7 @@ public sealed class DenialReason
     public PolicyMode? PolicyMode { get; }// for PolicyRequirementUnmet
     public string? ResourceType { get; }  // for ResourceOwnership, echoed from the ResourceContext
     public string? ResourceId { get; }    // for ResourceOwnership, echoed from the ResourceContext
+    public string? DenyPattern { get; }   // for ExplicitDeny, the deny that blocked the permission
 }
 ```
 
@@ -300,7 +314,8 @@ The `configure` callback is optional. It registers, all as singletons via `TryAd
 - the `RoleRegistry` built from the declared roles,
 - the `PolicyRegistry` built from the declared policies,
 - a `GrantDiagnostics` instance,
-- an `IGrantAuthorizer` (the default `GrantAuthorizer`).
+- an `IGrantAuthorizer` (the default `GrantAuthorizer`),
+- an `IEffectiveGrantCache`, only when `UseEffectiveSetCache` was called.
 
 Because registration uses `TryAdd`, registering your own implementation of any of these before
 calling `AddOrionGrant` is respected.
@@ -313,6 +328,9 @@ public sealed class OrionGrantBuilder
     public OrionGrantBuilder AddRole(string role, params string[] permissions);
     public OrionGrantBuilder IncludeRole(string role, params string[] includedRoles);
     public OrionGrantBuilder AddPolicy(string name, PolicyMode mode, params string[] permissions);
+    public OrionGrantBuilder AddPolicy(
+        string name, PolicyMode mode, GrantCondition condition, params string[] permissions);
+    public OrionGrantBuilder UseEffectiveSetCache(int capacity = BoundedEffectiveGrantCache.DefaultCapacity);
 }
 ```
 
