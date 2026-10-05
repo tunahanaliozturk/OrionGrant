@@ -2,7 +2,7 @@
 
 Where OrionGrant is, what has shipped, and what is likely next.
 
-OrionGrant is at `0.5.0`: a dependency-light permission and policy authorization library for .NET, with
+OrionGrant is at `0.6.0`: a dependency-light permission and policy authorization library for .NET, with
 hierarchical wildcard permissions, roles (including role-to-role composition), named all-of / any-of
 policies, resource / ownership-aware (object-level) checks, explicit denies (deny-overrides),
 attribute-based (ABAC) policy conditions, an opt-in per-principal effective-set cache, structured
@@ -19,7 +19,8 @@ for them. If something here matters to you, open an issue and say so, that is wh
 These constrain what is worth adding:
 
 - **Stay dependency-light.** The library depends only on
-  `Microsoft.Extensions.DependencyInjection.Abstractions`. Anything that would pull in a heavier
+  `Microsoft.Extensions.DependencyInjection.Abstractions` and `Orion.Abstractions` (the family's shared
+  contracts and telemetry spine). Anything that would pull in a heavier
   dependency belongs in a separate companion package, not the core.
 - **Keep the hot path pure and synchronous.** The matcher and authorizer are allocation-light and
   trivially testable. New features should not compromise that for the common case.

@@ -3,6 +3,7 @@
     <PackageId>OrionGrant.AspNetCore</PackageId>
     <RootNamespace>Moongazing.OrionGrant.AspNetCore</RootNamespace>
     <Description>ASP.NET Core authorization integration for OrionGrant: an IAuthorizationHandler, requirement, and policy provider that bridge OrionGrant permission and policy checks to the framework's [Authorize] pipeline, with RequirePermission / RequirePolicy builder extensions, resource-based (object-level) authorization, and structured denial reasons surfaced as authorization failures.</Description>
+    <PackageReadmeFile>docs/README.md</PackageReadmeFile>
     <PackageTags>authorization;aspnetcore;permissions;rbac;policy;authorize;orion</PackageTags>
   </PropertyGroup>
   <ItemGroup>
@@ -10,6 +11,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Moongazing.OrionGrant\Moongazing.OrionGrant.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="docs/README.md" Pack="true" PackagePath="docs/" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Moongazing.OrionGrant.AspNetCore.Tests" />

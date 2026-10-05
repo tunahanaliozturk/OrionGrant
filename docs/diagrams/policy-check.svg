@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="610" viewBox="0 0 1200 610">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-fail" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: "Segoe UI", Inter, "Helvetica Neue", Arial, sans-serif; fill: #1e1b4b; }
+    .title { font-size: 24px; font-weight: 700; }
+    .subtitle { font-size: 14px; fill: #475569; }
+    .label { font-size: 15px; font-weight: 600; }
+    .small { font-size: 12.5px; fill: #475569; }
+    .code { font-family: "Cascadia Code", Consolas, "SF Mono", monospace; font-size: 13px; fill: #3730a3; }
+    .edge { font-size: 12.5px; fill: #334155; }
+    .step { fill: #eef2ff; stroke: #4f46e5; stroke-width: 2; }
+    .ext { fill: #f0f9ff; stroke: #0284c7; stroke-width: 2; }
+    .ok { fill: #ecfdf5; stroke: #059669; stroke-width: 2; }
+    .fail { fill: #fef2f2; stroke: #dc2626; stroke-width: 2; }
+    .decision { fill: #fffbeb; stroke: #d97706; stroke-width: 2; }
+    .note { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 4 3; }
+    .lane { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 6 5; }
+    .flow { fill: none; stroke: #64748b; stroke-width: 2; marker-end: url(#arrow); }
+    .flow.alt { stroke: #dc2626; stroke-dasharray: 6 4; marker-end: url(#arrow-fail); }
+    .flow.back { stroke-dasharray: 6 4; }
+    .badge { fill: #4f46e5; }
+    .badge-text { font-size: 12px; font-weight: 700; fill: #ffffff; }
+  </style>
+
+  <rect width="1200" height="610" fill="#ffffff"/>
+
+  <text class="title" x="40" y="52">OrionGrant - policy check</text>
+  <text class="subtitle" x="40" y="78">AuthorizePolicy(principal, name): the permission requirement first, then the policy's optional ABAC condition.</text>
+
+  <!-- start -->
+  <rect class="step" x="40" y="235" width="220" height="90" rx="14"/>
+  <text class="code" x="150" y="266" text-anchor="middle">AuthorizePolicy(</text>
+  <text class="code" x="150" y="286" text-anchor="middle">principal, name)</text>
+  <text class="small" x="150" y="308" text-anchor="middle">optionally + attributes</text>
+
+  <path class="flow" d="M260,280 L278,280"/>
+
+  <!-- found decision -->
+  <polygon class="decision" points="370,220 460,280 370,340 280,280"/>
+  <text class="label" x="370" y="276" text-anchor="middle">policy</text>
+  <text class="label" x="370" y="296" text-anchor="middle">registered?</text>
+
+  <path class="flow alt" d="M370,220 L370,192"/>
+  <text class="edge" x="380" y="212">no</text>
+  <rect class="fail" x="280" y="110" width="180" height="80" rx="14"/>
+  <text class="label" x="370" y="140" text-anchor="middle">Denied</text>
+  <text class="code" x="370" y="162" text-anchor="middle">PolicyNotFound</text>
+  <text class="small" x="370" y="180" text-anchor="middle">never throws</text>
+
+  <path class="flow" d="M460,280 L498,280"/>
+  <text class="edge" x="479" y="270" text-anchor="middle">yes</text>
+
+  <!-- effective set -->
+  <rect class="step" x="500" y="235" width="200" height="90" rx="14"/>
+  <text class="label" x="600" y="262" text-anchor="middle">Effective grant set</text>
+  <text class="small" x="600" y="284" text-anchor="middle">allows and denies, same</text>
+  <text class="small" x="600" y="304" text-anchor="middle">as the permission check</text>
+
+  <path class="flow" d="M700,280 L738,280"/>
+
+  <!-- requirement decision -->
+  <polygon class="decision" points="830,220 920,280 830,340 740,280"/>
+  <text class="label" x="830" y="276" text-anchor="middle">requirement</text>
+  <text class="label" x="830" y="296" text-anchor="middle">met?</text>
+
+  <path class="flow alt" d="M830,220 L830,192"/>
+  <text class="edge" x="840" y="212">no</text>
+  <rect class="fail" x="720" y="110" width="220" height="80" rx="14"/>
+  <text class="label" x="830" y="136" text-anchor="middle">Denied</text>
+  <text class="code" x="830" y="158" text-anchor="middle">PolicyRequirementUnmet</text>
+  <text class="small" x="830" y="178" text-anchor="middle">or ExplicitDeny (RequireAll)</text>
+
+  <path class="flow" d="M920,280 L968,280"/>
+  <text class="edge" x="944" y="270" text-anchor="middle">yes</text>
+
+  <!-- condition decision -->
+  <polygon class="decision" points="1060,220 1150,280 1060,340 970,280"/>
+  <text class="label" x="1060" y="276" text-anchor="middle">condition</text>
+  <text class="label" x="1060" y="296" text-anchor="middle">passes?</text>
+
+  <path class="flow alt" d="M1060,220 L1060,192"/>
+  <text class="edge" x="1070" y="212">no</text>
+  <rect class="fail" x="960" y="110" width="200" height="80" rx="14"/>
+  <text class="label" x="1060" y="140" text-anchor="middle">Denied</text>
+  <text class="code" x="1060" y="162" text-anchor="middle">ConditionUnmet</text>
+
+  <path class="flow" d="M1060,340 L1060,398"/>
+  <text class="edge" x="1070" y="374">yes</text>
+  <rect class="ok" x="970" y="400" width="180" height="70" rx="14"/>
+  <text class="label" x="1060" y="432" text-anchor="middle">Granted</text>
+  <text class="small" x="1060" y="452" text-anchor="middle">also when no condition</text>
+
+  <!-- notes -->
+  <rect class="note" x="40" y="400" width="880" height="180" rx="10"/>
+  <text class="small" x="60" y="428"><tspan font-weight="700">RequireAll</tspan>: every listed permission must be allowed. The first one covered by a deny gives ExplicitDeny;</text>
+  <text class="small" x="60" y="448">the first one not granted gives PolicyRequirementUnmet with that Permission.</text>
+  <text class="small" x="60" y="476"><tspan font-weight="700">RequireAny</tspan>: one listed permission that is allowed and not denied is enough; otherwise PolicyRequirementUnmet.</text>
+  <text class="small" x="60" y="504"><tspan font-weight="700">Condition</tspan>: the GrantCondition given to AddPolicy(name, mode, condition, ...), called with the AuthorizationAttributes</text>
+  <text class="small" x="60" y="524">passed in; without attributes it gets AuthorizationAttributes.For(principal). A policy with no condition skips this step.</text>
+  <text class="small" x="60" y="552">Each policy decision adds 1 to orion.grant.decisions with kind = policy; AuthorizeAllPolicies expands the set once per batch.</text>
+</svg>
